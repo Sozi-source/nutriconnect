@@ -11,9 +11,9 @@ from rest_framework.response import Response
 from rest_framework import status, filters
 from rest_framework.decorators import api_view
 from rest_framework.reverse import reverse
-from django_filters.rest_framework import DjangoFilterBackend, OrderingFilter
-from django.db.models import Q
-
+from django_filters.rest_framework import DjangoFilterBackend
+from django.db.models import Q, F, Sum
+from rest_framework.filters import OrderingFilter, SearchFilter
 
 # Create your views here.
 
@@ -185,7 +185,7 @@ class ConsultationListView(generics.ListAPIView):
 
     filter_backends=[
         DjangoFilterBackend,
-        filter.OderingFilter
+        filters.OrderingFilter
     ]
 
     filterset_fields = {
@@ -214,6 +214,59 @@ class ConsultationStatusUpdateView(generics.UpdateAPIView):
     queryset = Consultation.objects.all()
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated, IsConsultationParticipantOrAdmin]
+
+class ConsultationMetricsView(generics.GenericAPIView):
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        user = request.user
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        # Base filters
+        client_filter = Q(client=user)
+        practitioner_filter = Q(practitioner__user=user)
+        
+        # Add date range if provided
+        if start_date and end_date:
+            client_filter &= Q(date__range=[start_date, end_date])
+            practitioner_filter &= Q(date__range=[start_date, end_date])
+        
+        # Client metrics
+        client_consultations = Consultation.objects.filter(client_filter)
+        completed_client = client_consultations.filter(status='completed')
+        
+        # Practitioner metrics
+        practitioner_consultations = Consultation.objects.filter(practitioner_filter)
+        completed_practitioner = practitioner_consultations.filter(status='completed')
+        
+        # Calculate totals
+        total_spent = completed_client.aggregate(
+            total=Sum('practitioner__hourly_rate')
+        )['total'] or 0
+        
+        total_earned = completed_practitioner.aggregate(
+            total=Sum('practitioner__hourly_rate')
+        )['total'] or 0
+        
+        # Format response
+        return Response({
+            'as_client': {
+                'total_consultations': client_consultations.count(),
+                'completed': completed_client.count(),
+                'pending': client_consultations.filter(status='pending').count(),
+                'cancelled': client_consultations.filter(status='cancelled').count(),
+                'total_spent': float(total_spent),
+            },
+            'as_practitioner': {
+                'total_consultations': practitioner_consultations.count(),
+                'completed': completed_practitioner.count(),
+                'pending': practitioner_consultations.filter(status='pending').count(),
+                'cancelled': practitioner_consultations.filter(status='cancelled').count(),
+                'total_earned': float(total_earned),
+            }
+        })
+    
 
 class ReviewCreateView(generics.CreateAPIView):
     queryset = Review.objects.all()
@@ -365,6 +418,13 @@ def api_root(request, format=None):
         'availability': {
             'list': reverse('availability-list', request=request, format=format),
             'detail': '/availability/{id}/',
+        },
+
+        # NEW: Metrics Dashboard
+        'metrics': {
+            'dashboard': reverse('consultation-metrics', request=request, format=format),
+            'description': 'Get consultation statistics and summary metrics',
+            'filters': '?start_date=YYYY-MM-DD&end_date=YYYY-MM-DD',
         },
         
         # Reviews

@@ -70,6 +70,9 @@ urlpatterns = [
     path('reviews/create/', views.ReviewCreateView.as_view(), name='review-create'),
     path('reviews/<int:pk>/', views.ReviewDetailView.as_view(), name='review-detail'),
     path('reviews/<int:pk>/update/', views.ReviewUpdateDeleteView.as_view(), name='review-update'),
+
+    # Consultation Metrics
+    path('metrics/', views.ConsultationMetricsView.as_view(), name='consultation-metrics')
 ]
 
 
