@@ -1,0 +1,40 @@
+from rest_framework import serializers
+from .models import User, UserProfile, Specialty, Consultation, Availability, Review, Practitioner
+
+
+class UserSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = User
+        fields = ['id','email']
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = UserProfile
+        fields = ['id', 'user', 'role', 'phone']
+
+
+class SpecialtySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Specialty
+        fields = ['id', 'name', 'description']
+
+class ConsultationSerializer(serializers.ModelSerializer):
+    class Meta:
+        model =Consultation
+        fields = ['id', 'client', 'practitioner', 'date', 'time', 'status']
+
+class AvailabilitySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Availability
+        fields = ['id', 'practitioner', 'day_of_week', 'start_time', 'end_time']
+
+class PractitionerSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Practitioner
+        fields = ['id', 'user', 'bio', 'rate', 'specialties']
+
+class ReviewSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = Review
+        fields = ['id', 'consultation', 'rating', 'comment', 'created_at']
+        read_only_fields = ['created_at']
