@@ -40,6 +40,7 @@ INSTALLED_APPS = [
     'NutriApp',
     'rest_framework.authtoken',
     'rest_framework',
+    'django_filters',
 ]
 
 MIDDLEWARE = [
