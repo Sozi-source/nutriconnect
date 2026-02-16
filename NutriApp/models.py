@@ -55,13 +55,18 @@ class Specialty(models.Model):
         return self.name
 
 class Practitioner(models.Model):
+    CURRENCY_CHOICES = [
+        ('KES', 'Kenyan Shilling'),
+        ('USD', 'US Dollar'),
+    ]
+    currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='KES')
+    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2)
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='practitioner')
-    bio = models.TextField(blank=True, null=True)
-    rate = models.DecimalField(max_digits=10, decimal_places=2)
     specialties = models.ManyToManyField(Specialty)
-
+    bio = models.TextField(blank=True, null=True)
+    
     def __str__(self):
-        return self.user.email
+        return f"{self.user.email}-{self.currency}:{self.hourly_rate}"
 
 class Availability(models.Model):
     class Day(models.IntegerChoices):

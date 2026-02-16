@@ -9,12 +9,28 @@ from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
 from rest_framework import status
+from rest_framework.decorators import api_view
+from rest_framework.reverse import reverse
 # Create your views here.
 
 class RegisterUserView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
     permission_classes =[AllowAny]
+
+    def create(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        # save the user
+        user = serializer.save()
+        # create token for the user
+        token, created = Token.objects.get_or_create(user=user)
+        # Return user data + token
+        return Response({
+            'user':UserSerializer(user).data,
+            'token':token.key,
+            'message':'Registration successful. You are now logged in.'
+        }, status=status.HTTP_201_CREATED)
 
 class ListUserView(generics.ListAPIView):
     queryset =User.objects.all()
@@ -48,7 +64,7 @@ class UserProfileDetailView(generics.RetrieveUpdateDestroyAPIView):
 class UserProfileListView(generics.ListAPIView):
     queryset = UserProfile.objects.all()
     serializer_class =UserProfileSerializer
-    permission_classes =[IsAdminUser]
+    permission_classes =[IsAuthenticated, IsAdminUser]
 
 class SpecialtyListView(generics.ListAPIView):
     queryset = Specialty.objects.all()
@@ -93,7 +109,7 @@ class AvailabilityListView(generics.ListAPIView):
         user = self.request.user
         if user.is_staff:
             return Availability.objects.all()
-        return Availability.objects.filter(practitioner_user=user)
+        return Availability.objects.filter(practitioner=user)
 
 
 class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -117,7 +133,7 @@ class ConsultationListView(generics.ListAPIView):
         user = self.request.user
         if user.is_staff:
             return Consultation.objects.all()
-        return Consultation.objects.filter(client=user)|Consultation.objects.filter(practitioner_user=user)
+        return Consultation.objects.filter(client=user)|Consultation.objects.filter(practitioner__user=user)
        
 
 class ConsultationDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -202,3 +218,75 @@ class LogoutView(generics.GenericAPIView):
             return Response({
                 'error': 'Already logged out or token not found'
             }, status=status.HTTP_400_BAD_REQUEST)
+
+# API ROOT VIEW
+@api_view(['GET'])
+def api_root(request, format=None):
+    """
+    Welcome to the NutriConnect API.
+    
+    This is the root endpoint providing links to all available resources.
+    """
+    return Response({
+        'message': 'Welcome to NutriConnect API',
+        'version': '1.0',
+        'documentation': 'For detailed docs, visit /swagger/ or /redoc/',
+        
+        # Authentication
+        'authentication': {
+            'register': reverse('register', request=request, format=format),
+            'login': reverse('login', request=request, format=format),
+            'profile': reverse('current-user-profile', request=request, format=format),
+        },
+        
+        # Users
+        'users': {
+            'list': reverse('user-list', request=request, format=format),
+            'detail': '/users/{id}/',
+        },
+        
+        # Profiles
+        'profiles': {
+            'my_profile': reverse('my-profile', request=request, format=format),
+            'create': reverse('profile-create', request=request, format=format),
+            'detail': '/profiles/{id}/',
+        },
+        
+        # Specialties
+        'specialties': {
+            'list': reverse('specialty-list', request=request, format=format),
+            'detail': '/specialties/{id}/',
+        },
+        
+        # Practitioners
+        'practitioners': {
+            'list': reverse('practitioner-list', request=request, format=format),
+            'create': reverse('practitioner-create', request=request, format=format),
+            'detail': '/practitioners/{id}/',
+            'update': '/practitioners/{id}/update/',
+            'availability': '/practitioners/{practitioner_id}/availability/',
+        },
+        
+        # Consultations
+        'consultations': {
+            'list': reverse('consultation-list', request=request, format=format),
+            'create': reverse('consultation-create', request=request, format=format),
+            'detail': '/consultations/{id}/',
+            'status': '/consultations/{id}/status/',
+            'reviews': '/consultations/{consultation_id}/reviews/',
+        },
+        
+        # Availability
+        'availability': {
+            'list': reverse('availability-list', request=request, format=format),
+            'detail': '/availability/{id}/',
+        },
+        
+        # Reviews
+        'reviews': {
+            'list': reverse('review-list', request=request, format=format),
+            'create': reverse('review-create', request=request, format=format),
+            'detail': '/reviews/{id}/',
+            'update': '/reviews/{id}/update/',
+        },
+    })

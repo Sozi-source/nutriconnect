@@ -37,16 +37,17 @@ consultation_patterns = [
 # Main URL patterns
 urlpatterns = [
     # Authentication & User Profile
+    path('', views.api_root, name='api-root'),
     path('register/', views.RegisterUserView.as_view(), name='register'),
     path('login/', views.LoginView.as_view(), name='login'),
-    path('profile/', views.CurrentUserView.as_view(), name='profile'),  # Current authenticated user
+    path('profile/', views.CurrentUserView.as_view(), name='current-user-profile'), 
     
     # User Management (Admin only)
     path('users/', views.ListUserView.as_view(), name='user-list'),
     path('users/<int:pk>/', views.UserDetailView.as_view(), name='user-detail'),
     
     # User Profiles
-    path('profiles/', views.UserProfileListView.as_view(), name='profile-list'),
+    path('my-profile/', views.UserProfileListView.as_view(), name='my-profile'),
     path('profiles/create/', views.UserProfileCreateView.as_view(), name='profile-create'),
     path('profiles/<int:pk>/', views.UserProfileDetailView.as_view(), name='profile-detail'),
     
