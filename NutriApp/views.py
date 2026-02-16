@@ -1,9 +1,10 @@
 from django.shortcuts import render
 from rest_framework import generics
 from .models import User, UserProfile, Specialty, Practitioner, Review, Availability, Consultation
-from .serializers import UserSerializer, UserProfileSerializer, SpecialtySerializer, PractitionerSerializer
+from .serializers import UserSerializer, ReviewSerializer, UserProfileSerializer, SpecialtySerializer, ConsultationSerializer, PractitionerSerializer, AvailabilitySerializer
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser
-
+from .permissions import IsOwnerOrAdmin, IsConsultationClientOrAdmin, IsRelatedUserOwnerOrAdmin, IsAvailabilityOwnerOrAdmin, IsReviewOwnerOrAdmin, IsConsultationParticipantOrAdmin
+from rest_framework.exceptions import ValidationError
 # Create your views here.
 
 class RegisterUserView(generics.CreateAPIView):
@@ -13,10 +14,13 @@ class RegisterUserView(generics.CreateAPIView):
 class ListUserView(generics.ListAPIView):
     queryset =User.objects.all()
     serializer_class = UserSerializer
+    permission_classes = [IsAdminUser]
 
 class UserDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset =User.objects.all()
     serializer_class = UserSerializer
+    permission_classes =[IsAuthenticated, IsOwnerOrAdmin]
+    
 
 class CurrentUserView(generics.RetrieveAPIView):
     queryset =User.objects.all()
@@ -29,11 +33,12 @@ class CurrentUserView(generics.RetrieveAPIView):
 class UserProfileCreateView(generics.CreateAPIView):
     queryset = UserProfile.objects.all()
     serializer_class =UserProfileSerializer
+    permission_classes = [IsAuthenticated]
 
-class UserProfileDetail(generics.RetrieveUpdateDestroyAPIView):
+class UserProfileDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = UserProfile.objects.all()
     serializer_class =UserProfileSerializer
-    permission_classes= [IsAuthenticated]
+    permission_classes= [IsAuthenticated, IsRelatedUserOwnerOrAdmin]
 
 class UserProfileListView(generics.ListAPIView):
     queryset = UserProfile.objects.all()
@@ -43,23 +48,113 @@ class UserProfileListView(generics.ListAPIView):
 class SpecialtyListView(generics.ListAPIView):
     queryset = Specialty.objects.all()
     serializer_class = SpecialtySerializer
+    permission_classes = [IsAuthenticated]
 
 class SpecialtyDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Specialty.objects.all()
     serializer_class = SpecialtySerializer
+    permission_classes =[IsAuthenticated]
 
 class PractitionerListView(generics.ListAPIView):
-    queryset = Practitioner
+    queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
+    permission_classes = [IsAdminUser]
 
 class PractitionerDetailView(generics.RetrieveAPIView):
-    queryset = Practitioner
+    queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
+    permission_classes = [IsAdminUser]
 
 class PractitionerCreateView(generics.CreateAPIView):
-    queryset = Practitioner
+    queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
+    permission_classes = [IsAdminUser]
 
 class PractitionerUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Practitioner
+    queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
+    permission_classes = [IsAdminUser]
+
+class AvailabilityCreateView(generics.CreateAPIView):
+    queryset = Availability.objects.all()
+    serializer_class = AvailabilitySerializer
+    permission_classes = [IsAuthenticated]
+
+class AvailabilityListView(generics.ListAPIView):
+    serializer_class = AvailabilitySerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Availability.objects.all()
+        return Availability.objects.filter(practitioner_user=user)
+
+
+class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Availability.objects.all()
+    serializer_class = AvailabilitySerializer
+    permission_classes = [IsAuthenticated, IsAvailabilityOwnerOrAdmin]
+
+class ConsultationCreateView(generics.CreateAPIView):
+    queryset = Consultation.objects.all()
+    serializer_class = ConsultationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        serializer.save(client=self.request.user)
+
+class ConsultationListView(generics.ListAPIView):
+    serializer_class = ConsultationSerializer
+    permission_classes =[IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Consultation.objects.all()
+        return Consultation.objects.filter(client=user)|Consultation.objects.filter(practitioner_user=user)
+       
+
+class ConsultationDetailView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Consultation.objects.all()
+    serializer_class = ConsultationSerializer
+    permission_classes = [IsAuthenticated, IsConsultationParticipantOrAdmin]
+    
+
+class ConsultationStatusUpdateView(generics.UpdateAPIView):
+    queryset = Consultation.objects.all()
+    serializer_class = ConsultationSerializer
+    permission_classes = [IsAuthenticated, IsConsultationParticipantOrAdmin]
+
+class ReviewCreateView(generics.CreateAPIView):
+    queryset = Review.objects.all()
+    serializer_class = ReviewSerializer
+    permission_classes = [IsAuthenticated, IsConsultationClientOrAdmin]
+
+    def perform_create(self, serializer):
+        consultation = serializer.validated_data['consultation']
+        if self.request.user != consultation.client and not self.request.user.is_staff:
+            raise PermissionError("You can only review your own consultations.")
+        if Review.objects.filter(consultation=consultation).exists():
+            raise ValidationError("This consultation has already been reviewed.")
+        serializer.save(reviwer=self.request.user)
+
+class ReviewListView(generics.ListAPIView):
+    serializer_class = ReviewSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        user = self.request.user
+        if user.is_staff:
+            return Review.objects.all()
+        return Review.objects.filter(consultation_client=user)
+
+class ReviewDetailView(generics.RetrieveAPIView):
+    queryset = Review.objects.all()
+    serializer_class = ReviewSerializer
+    permission_classes = [IsAuthenticated, IsReviewOwnerOrAdmin]
+
+class ReviewUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
+    queryset = Review.objects.all()
+    serializer_class = ReviewSerializer
+    permission_classes = [IsAuthenticated, IsReviewOwnerOrAdmin]

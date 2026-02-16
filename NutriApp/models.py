@@ -93,9 +93,10 @@ class Consultation(models.Model):
     
 class Review(models.Model):
     consultation= models.OneToOneField(Consultation, on_delete=models.CASCADE, related_name='review')
+    reviewer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews')
     rating = models.PositiveSmallIntegerField(choices=[(1,1), (2,2), (3,3), (4,4), (5,5)])
     comment = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     def __str__(self):
-        return f"Review for {self.consultation}"
+        return f"Review by {self.reviewer.email} for {self.consultation}"
