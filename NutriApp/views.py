@@ -5,6 +5,10 @@ from .serializers import UserSerializer, ReviewSerializer, UserProfileSerializer
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser
 from .permissions import IsOwnerOrAdmin, IsConsultationClientOrAdmin, IsRelatedUserOwnerOrAdmin, IsAvailabilityOwnerOrAdmin, IsReviewOwnerOrAdmin, IsConsultationParticipantOrAdmin
 from rest_framework.exceptions import ValidationError
+from rest_framework.authtoken.views import ObtainAuthToken
+from rest_framework.authtoken.models import Token
+from rest_framework.response import Response
+from rest_framework import status
 # Create your views here.
 
 class RegisterUserView(generics.CreateAPIView):
@@ -158,3 +162,6 @@ class ReviewUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Review.objects.all()
     serializer_class = ReviewSerializer
     permission_classes = [IsAuthenticated, IsReviewOwnerOrAdmin]
+
+
+# Auth Views

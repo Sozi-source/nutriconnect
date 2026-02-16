@@ -38,6 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'NutriApp',
+    'rest_framework.authtoken',
     'rest_framework',
 ]
 
@@ -120,9 +121,15 @@ STATIC_URL = 'static/'
 
 AUTH_USER_MODEL = 'NutriApp.User'
 
-# Pagination
+# DRF AUTHTOKEN & PAGINATION
 REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20
 }
-
