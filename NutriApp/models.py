@@ -93,7 +93,7 @@ class Consultation(models.Model):
     
 class Review(models.Model):
     consultation= models.OneToOneField(Consultation, on_delete=models.CASCADE, related_name='review')
-    reviewer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews')
+    reviewer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews', null=True, blank=True)
     rating = models.PositiveSmallIntegerField(choices=[(1,1), (2,2), (3,3), (4,4), (5,5)])
     comment = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
