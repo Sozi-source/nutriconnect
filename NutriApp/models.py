@@ -48,6 +48,18 @@ class UserProfile(models.Model):
 
 
 class Specialty(models.Model):
+    specialties = [
+    'Nutritionist',
+    'Dietitian',
+    'General Practitioner (GP)',
+    'Clinical Psychologist',
+    'Counselor',
+    'Physiotherapist',
+    'Personal Trainer',
+    'Dentist',
+    'Gynecologist',
+    'Pediatrician'
+]
     name= models.CharField(max_length=200)
     description= models.TextField(blank=True, null=True)
 
@@ -92,9 +104,12 @@ class Consultation(models.Model):
     date = models.DateField()
     time = models.TimeField()
     status = models.CharField(max_length=50, choices=[('booked','Booked'),('completed','Completed'),('cancelled','Cancelled')])
-
+    version = models.IntegerField(default=1)
+    
+    class Meta:
+        unique_together = ['practitioner', 'date', 'time']
     def __str__(self):
-        return f"{self.client.email} with {self.practitioner.user.email}"
+        return f"{self.practitioner}-{self.date} at {self.time}"
     
 class Review(models.Model):
     consultation= models.OneToOneField(Consultation, on_delete=models.CASCADE, related_name='review')

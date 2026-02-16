@@ -36,7 +36,7 @@ class AvailabilitySerializer(serializers.ModelSerializer):
 class PractitionerSerializer(serializers.ModelSerializer):
     class Meta:
         model = Practitioner
-        fields = ['id', 'user', 'bio', 'rate', 'specialties']
+        fields = ['id', 'user', 'bio', 'currency','hourly_rate', 'specialties']
 
 class ReviewSerializer(serializers.ModelSerializer):
     class Meta:
