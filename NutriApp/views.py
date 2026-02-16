@@ -2,7 +2,7 @@ from django.shortcuts import render
 from rest_framework import generics
 from .models import User, UserProfile, Specialty, Practitioner, Review, Availability, Consultation
 from .serializers import UserSerializer, ReviewSerializer, UserProfileSerializer, SpecialtySerializer, ConsultationSerializer, PractitionerSerializer, AvailabilitySerializer
-from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser, AllowAny
 from .permissions import IsOwnerOrAdmin, IsConsultationClientOrAdmin, IsRelatedUserOwnerOrAdmin, IsAvailabilityOwnerOrAdmin, IsReviewOwnerOrAdmin, IsConsultationParticipantOrAdmin
 from rest_framework.exceptions import ValidationError
 from rest_framework.authtoken.views import ObtainAuthToken
@@ -14,6 +14,7 @@ from rest_framework import status
 class RegisterUserView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
+    permission_classes =[AllowAny]
 
 class ListUserView(generics.ListAPIView):
     queryset =User.objects.all()
@@ -165,3 +166,39 @@ class ReviewUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
 
 
 # Auth Views
+class LoginView(ObtainAuthToken):
+    def post(self, request, *args, **kwargs):
+        serializer = self.get_serializer(data=request.data)
+        try:
+            serializer.is_valid(raise_exception=True)
+            user = serializer.validated_data['user']
+            token, created = Token.objects.get_or_create(user=user)
+            
+            return Response({
+                'token': token.key,
+                'user_id': user.pk,
+                'email': user.email,
+                'username': user.username,
+                'is_practitioner': hasattr(user, 'practitioner'),
+                'is_staff': user.is_staff,
+            }, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({
+                'error': 'Invalid credentials',
+                'detail': str(e)
+            }, status=status.HTTP_401_UNAUTHORIZED)
+
+class LogoutView(generics.GenericAPIView):
+    permission_classes =[IsAuthenticated]
+
+    def post(self, request):
+        try:
+            # Delete the token to force login again
+            request.user.auth_token.delete()
+            return Response({
+                'message': 'Successfully logged out'
+            }, status=status.HTTP_200_OK)
+        except (AttributeError, Token.DoesNotExist):
+            return Response({
+                'error': 'Already logged out or token not found'
+            }, status=status.HTTP_400_BAD_REQUEST)

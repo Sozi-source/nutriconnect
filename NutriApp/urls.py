@@ -1,6 +1,8 @@
 from django.urls import path, include
 from . import views
 
+# Authentication urls
+
 # Practitioner nested URLs
 practitioner_patterns = [
     # Practitioner CRUD
@@ -36,6 +38,7 @@ consultation_patterns = [
 urlpatterns = [
     # Authentication & User Profile
     path('register/', views.RegisterUserView.as_view(), name='register'),
+    path('login/', views.LoginView.as_view(), name='login'),
     path('profile/', views.CurrentUserView.as_view(), name='profile'),  # Current authenticated user
     
     # User Management (Admin only)
