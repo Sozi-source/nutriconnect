@@ -8,9 +8,13 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.authtoken.views import ObtainAuthToken
 from rest_framework.authtoken.models import Token
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, filters
 from rest_framework.decorators import api_view
 from rest_framework.reverse import reverse
+from django_filters.rest_framework import DjangoFilterBackend, OrderingFilter
+from django.db.models import Q
+
+
 # Create your views here.
 
 class RegisterUserView(generics.CreateAPIView):
@@ -71,6 +75,11 @@ class SpecialtyListView(generics.ListAPIView):
     serializer_class = SpecialtySerializer
     permission_classes = [IsAuthenticated]
 
+    filter_backends = [filters.SearchFilter, filters.OrderingFilter]
+    search_fields = ['name']
+    ordering_fields = ['name']
+    ordering = ['name']
+
 class SpecialtyDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Specialty.objects.all()
     serializer_class = SpecialtySerializer
@@ -80,6 +89,37 @@ class PractitionerListView(generics.ListAPIView):
     queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
     permission_classes = [IsAdminUser]
+
+    filter_backends=[
+        DjangoFilterBackend,
+        filters.SearchFilter,
+        filters.OrderingFilter,
+    ]
+
+    filterset_fields= {
+        'specialties__name': ['exact'],
+        'city': ['exact'],
+        'currency': ['exact'],
+        'hourly_rate': ['lt', 'gt', 'range'],
+        'experience_level': ['exact'],
+        'is_verified': ['exact'],
+    }
+
+    search_fields = [
+        'user__first_name',
+        'user__last_name',
+        'bio',
+        'specialties__name',
+        'city',
+    ]
+
+    ordering_fields = [
+        'hourly_rate',
+        'years_experience',
+        'user__first_name',
+    ]
+    ordering = ['user__first_name'] #default
+
 
 class PractitionerDetailView(generics.RetrieveAPIView):
     queryset = Practitioner.objects.all()
@@ -105,11 +145,25 @@ class AvailabilityListView(generics.ListAPIView):
     serializer_class = AvailabilitySerializer
     permission_classes = [IsAuthenticated]
 
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.OrderingFilter,
+    ]
+    
+    filterset_fields = {
+        'date': ['exact', 'gte', 'lte'],
+        'practitioner_id': ['exact'],
+        'is_booked': ['exact'],
+    }
+    
+    ordering_fields = ['date', 'time']
+    ordering = ['date', 'time']
+
     def get_queryset(self):
         user = self.request.user
         if user.is_staff:
             return Availability.objects.all()
-        return Availability.objects.filter(practitioner=user)
+        return Availability.objects.filter(practitioner__user=user)
 
 
 class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -128,6 +182,20 @@ class ConsultationCreateView(generics.CreateAPIView):
 class ConsultationListView(generics.ListAPIView):
     serializer_class = ConsultationSerializer
     permission_classes =[IsAuthenticated]
+
+    filter_backends=[
+        DjangoFilterBackend,
+        filter.OderingFilter
+    ]
+
+    filterset_fields = {
+        'date': ['exact', 'gte', 'lte'],
+        'status': ['exact'],
+        'practitioner__user__email': ['exact'],
+    }
+    
+    ordering_fields = ['date', 'time', 'created_at']
+    ordering = ['-date', '-time']
 
     def get_queryset(self):
         user = self.request.user
@@ -164,11 +232,28 @@ class ReviewListView(generics.ListAPIView):
     serializer_class = ReviewSerializer
     permission_classes = [IsAuthenticated]
 
+    filter_backends = [
+        DjangoFilterBackend,
+        filters.OrderingFilter,
+    ]
+    
+    filterset_fields = {
+        'rating': ['exact', 'gte'],
+        'created_at': ['gte', 'lte'],
+        'consultation__practitioner': ['exact'],
+    }
+    
+    ordering_fields = ['rating', 'created_at']
+    ordering = ['-created_at']
+
     def get_queryset(self):
         user = self.request.user
         if user.is_staff:
             return Review.objects.all()
-        return Review.objects.filter(consultation_client=user)
+        return Review.objects.filter(
+            Q(consultation_client=user)|
+            Q(consultation__practitioner__user=user)
+            )
 
 class ReviewDetailView(generics.RetrieveAPIView):
     queryset = Review.objects.all()
