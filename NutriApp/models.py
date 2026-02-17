@@ -47,8 +47,13 @@ class User(AbstractUser):
         return self.first_name
 
 class UserProfile(models.Model):
+    
+    USER_ROLES=[
+        ('client', 'Client'),
+        ('practitioner', 'Practitioner'),
+    ]
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
-    role = models.CharField(max_length=50, choices=[('client', 'Client'), ('practitioner', 'Practitioner')])
+    role = models.CharField(max_length=50, choices=USER_ROLES, default='client')
     phone = models.CharField(max_length=20, null=True, blank=True)
 
     def __str__(self):

@@ -5,18 +5,47 @@ from .models import User, UserProfile, Specialty, Consultation, Availability, Re
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
-        fields = ['id', 'user', 'role', 'phone']
+        fields = ['id', 'role', 'phone']
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, min_length=8)
     profile = UserProfileSerializer(read_only=True)
+
+    role = serializers.ChoiceField(
+        choices=['client', 'practitioner'],
+        write_only = True,
+        required = False,
+        default = 'client'
+    )
+    phone = serializers.CharField(
+        write_only=True, 
+        required=False, 
+        allow_blank=True,
+        default=''
+    )
     
     class Meta:
         model = User
-        fields = ['id','email', 'password', 'profile']
+        fields = ['id', 'first_name', 'last_name', 'email', 'password', 'profile', 'role', 'phone']
+    
     def create(self, validated_data):
+        role = validated_data.pop('role', 'client')
+        phone =validated_data.pop('phone')
+
+        # create user
         user = User.objects.create_user(**validated_data)
+
+        # Update or create profile
+        if hasattr(user, 'profile'):
+            profile = user.profile
+            profile.role =role
+            profile.phone = phone
+            profile.save()
+        else:
+            UserProfile.objects.create(user=user, role=role, phone=phone)
         return user
+    
+
 
 class SpecialtySerializer(serializers.ModelSerializer):
     class Meta:
