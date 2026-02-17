@@ -29,14 +29,22 @@ class CustomUserManager(BaseUserManager):
 class User(AbstractUser):
     username = None
     email = models.EmailField(unique=True)
+    first_name= models.CharField(max_length=150)
+    last_name= models.CharField(max_length=150)
 
     USERNAME_FIELD = 'email'
-    REQUIRED_FIELDS = []
+    REQUIRED_FIELDS = ['first_name', 'last_name']
 
     objects = CustomUserManager()
 
     def __str__(self):
-        return self.email
+        return f"{self.first_name} {self.last_name}-{self.email}"
+    
+    def get_full_name(self):
+        return f"{self.first_name} {self.last_name}".strip()
+    
+    def get_short_name(self):
+        return self.first_name
 
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
@@ -44,7 +52,7 @@ class UserProfile(models.Model):
     phone = models.CharField(max_length=20, null=True, blank=True)
 
     def __str__(self):
-        return f"{self.user.email}- {self.role}"
+        return f"{self.user.get_full_name()}- {self.role}"
 
 
 class Specialty(models.Model):
@@ -104,8 +112,8 @@ class Consultation(models.Model):
     date = models.DateField()
     time = models.TimeField()
     status = models.CharField(max_length=50, choices=[('booked','Booked'),('completed','Completed'),('cancelled','Cancelled')])
-    version = models.IntegerField(default=1)
-    
+    version = models.IntegerField(default=1) # Prevent double booking
+
     class Meta:
         unique_together = ['practitioner', 'date', 'time']
     def __str__(self):
