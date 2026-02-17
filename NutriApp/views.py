@@ -92,7 +92,7 @@ class SpecialtyDetailView(generics.RetrieveUpdateDestroyAPIView):
 class PractitionerListView(generics.ListAPIView):
     queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
 
     filter_backends=[
         DjangoFilterBackend,
@@ -155,13 +155,12 @@ class AvailabilityListView(generics.ListAPIView):
     ]
     
     filterset_fields = {
-        'date': ['exact', 'gte', 'lte'],
-        'practitioner_id': ['exact'],
-        'is_booked': ['exact'],
+        'day_of_week': ['exact', 'gte', 'lte'],
+        'practitioner': ['exact'],
     }
     
-    ordering_fields = ['date', 'time']
-    ordering = ['date', 'time']
+    ordering_fields = ['day_of_week', 'start_time', 'end_time']
+    ordering = ['day_of_week', 'start_time']
 
     def get_queryset(self):
         user = self.request.user
@@ -308,7 +307,7 @@ class ReviewListView(generics.ListAPIView):
         if user.is_staff:
             return Review.objects.all()
         return Review.objects.filter(
-            Q(consultation_client=user)|
+            Q(consultation__client=user)|
             Q(consultation__practitioner__user=user)
             )
 

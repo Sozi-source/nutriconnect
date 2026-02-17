@@ -1,6 +1,7 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.contrib.auth.base_user import BaseUserManager
+from django.core.validators import MinValueValidator, MaxValueValidator
 
 # Create your models here.
 class CustomUserManager(BaseUserManager):
@@ -61,21 +62,12 @@ class UserProfile(models.Model):
 
 
 class Specialty(models.Model):
-    specialties = [
-    'Nutritionist',
-    'Dietitian',
-    'General Practitioner (GP)',
-    'Clinical Psychologist',
-    'Counselor',
-    'Physiotherapist',
-    'Personal Trainer',
-    'Dentist',
-    'Gynecologist',
-    'Pediatrician'
-]
-    name= models.CharField(max_length=200)
+    name= models.CharField(max_length=200, unique=True)
     description= models.TextField(blank=True, null=True)
 
+    class Meta:
+        ordering = ['name']
+    
     def __str__(self):
         return self.name
 
@@ -85,16 +77,25 @@ class Practitioner(models.Model):
         ('USD', 'US Dollar'),
     ]
     currency = models.CharField(max_length=3, choices=CURRENCY_CHOICES, default='KES')
-    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2)
+    hourly_rate = models.DecimalField(max_digits=10, decimal_places=2, validators=[MinValueValidator(0)])
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='practitioner')
-    specialties = models.ManyToManyField(Specialty)
+    specialties = models.ManyToManyField(Specialty, related_name='practitioner')
     bio = models.TextField(blank=True, null=True)
-    city = models.CharField(max_length=100)
-    experience_level = models.CharField(max_length=50)
-    is_verified = models.BooleanField(default=False)
+    city = models.CharField(max_length=100, db_index=True)
+    years_of_experience = models.PositiveIntegerField(default=0)
+    is_verified = models.BooleanField(default=False, db_index=True)
+    profile_complete= models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        indexes =[
+            models.Index(fields=['city', 'is_verified']),
+            models.Index(fields=['years_of_experience', 'hourly_rate'])
+        ]
     
     def __str__(self):
-        return f"{self.user.email}-{self.currency}:{self.hourly_rate}"
+        return f"{self.user.get_full_name()}-{self.city}"
 
 class Availability(models.Model):
     class Day(models.IntegerChoices):
@@ -111,28 +112,53 @@ class Availability(models.Model):
     start_time = models.TimeField()
     end_time = models.TimeField()
 
+    class Meta:
+        unique_together =['practitioner', 'day_of_week', 'start_time'] #prevent duplicate slots
+        ordering = ['day_of_week', 'start_time']
+
+
     def __str__(self):
-        return f"{self.practitioner.user.email}-{self.get_day_of_week_display()}"
+        return f"{self.practitioner}-{self.get_day_of_week_display()} {self.start_time}-{self.end_time}"
 
 class Consultation(models.Model):
-    client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='consultations')
+    class Status(models.TextChoices):
+        BOOKED = 'booked', 'Booked'
+        COMPLETED = 'completed', 'Completed'
+        CANCELLED = 'cancelled', 'Cancelled'
+        NO_SHOW = 'no_show', 'No Show'
+
+    client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='consultations', limit_choices_to={'profile__role':'client'})
     practitioner = models.ForeignKey(Practitioner, on_delete=models.CASCADE, related_name='consultations')
-    date = models.DateField()
+    date = models.DateField(db_index=True)
     time = models.TimeField()
-    status = models.CharField(max_length=50, choices=[('booked','Booked'),('completed','Completed'),('cancelled','Cancelled')])
+    status = models.CharField(max_length=50, choices=Status.choices, default=Status.BOOKED)
+    duration_minutes = models.PositiveIntegerField(default=60)
+    client_notes = models.TextField(blank=True, null=True)
+    practitioner_notes = models.TextField(blank=True, null=True)
     version = models.IntegerField(default=1) # Prevent double booking
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
         unique_together = ['practitioner', 'date', 'time']
+        ordering = ['-date', '-time']
+        indexes = [
+            models.Index(fields=['client', 'status']),
+            models.Index(fields=['practitioner', 'status']),
+        ]
+
     def __str__(self):
-        return f"{self.practitioner}-{self.date} at {self.time}"
+        return f"{self.client.get_full_name()} with {self.practitioner} on {self.date} at {self.time}"
     
 class Review(models.Model):
     consultation= models.OneToOneField(Consultation, on_delete=models.CASCADE, related_name='review')
     reviewer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews', null=True, blank=True)
-    rating = models.PositiveSmallIntegerField(choices=[(1,1), (2,2), (3,3), (4,4), (5,5)])
+    rating = models.PositiveSmallIntegerField(choices=[(i,i) for i in range(1,6)], validators=[MinValueValidator(1), MaxValueValidator(5)])
     comment = models.TextField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-created_at']
 
     def __str__(self):
         return f"Review by {self.reviewer.email} for {self.consultation}"
