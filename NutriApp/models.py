@@ -89,6 +89,9 @@ class Practitioner(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='practitioner')
     specialties = models.ManyToManyField(Specialty)
     bio = models.TextField(blank=True, null=True)
+    city = models.CharField(max_length=100)
+    experience_level = models.CharField(max_length=50)
+    is_verified = models.BooleanField(default=False)
     
     def __str__(self):
         return f"{self.user.email}-{self.currency}:{self.hourly_rate}"

@@ -28,14 +28,6 @@ class RegisterUserView(generics.CreateAPIView):
         # save the user
         user = serializer.save()
 
-         # Create profile for the user
-        profile_data = request.data.get('profile', {})
-        UserProfile.objects.create(
-            user=user,
-            role=profile_data.get('role'),
-            phone=profile_data.get('phone'),
-        )
-
         # Refresh user instance to include profile
         user.refresh_from_db()
 
