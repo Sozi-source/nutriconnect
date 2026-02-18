@@ -100,14 +100,14 @@ class PractitionerListView(generics.ListAPIView):
         filters.OrderingFilter,
     ]
 
-    filterset_fields= {
-        'specialties__name': ['exact'],
-        'city': ['exact'],
-        'currency': ['exact'],
-        'hourly_rate': ['lt', 'gt', 'range'],
-        'years_of_experience': ['exact'],
-        'is_verified': ['exact'],
-    }
+    filterset_fields= [
+        'specialties__name',
+        'city',
+        'currency',
+        'hourly_rate',
+        'years_of_experience',
+        'is_verified'
+    ]
 
     search_fields = [
         'user__first_name',
@@ -119,7 +119,7 @@ class PractitionerListView(generics.ListAPIView):
 
     ordering_fields = [
         'hourly_rate',
-        'years_experience',
+        'years_of_experience',
         'user__first_name',
     ]
     ordering = ['user__first_name'] #default
