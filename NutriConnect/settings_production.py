@@ -4,6 +4,16 @@ Production settings for NutriConnect API on PythonAnywhere (Free Tier - SQLite)
 
 from .settings import *
 import os
+from pathlib import Path
+
+# ==============================================================================
+# BASE DIRECTORY
+# ==============================================================================
+# Define BASE_DIR if not already defined in settings.py
+try:
+    BASE_DIR
+except NameError:
+    BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ==============================================================================
 # CRITICAL SECURITY SETTINGS
@@ -59,26 +69,29 @@ os.makedirs(MEDIA_ROOT, exist_ok=True)
 # CORS SETTINGS (if using django-cors-headers)
 # ==============================================================================
 # Only add these if you have 'corsheaders' in INSTALLED_APPS
-try:
+if 'corsheaders' in INSTALLED_APPS:
     CORS_ALLOWED_ORIGINS = [
         'https://osozi.pythonanywhere.com',
         'http://osozi.pythonanywhere.com',
     ]
     CORS_ALLOW_CREDENTIALS = True
-except NameError:
-    # corsheaders not installed, skip
-    pass
 
 # ==============================================================================
 # WHITENOISE CONFIGURATION (for static files)
 # ==============================================================================
 # Add whitenoise to middleware if installed
-try:
-    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+if 'whitenoise' in INSTALLED_APPS:
+    # Insert after SecurityMiddleware or at position 1
+    security_middleware = 'django.middleware.security.SecurityMiddleware'
+    whitenoise_middleware = 'whitenoise.middleware.WhiteNoiseMiddleware'
+    
+    if security_middleware in MIDDLEWARE:
+        idx = MIDDLEWARE.index(security_middleware) + 1
+        MIDDLEWARE.insert(idx, whitenoise_middleware)
+    else:
+        MIDDLEWARE.insert(1, whitenoise_middleware)
+    
     STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-except NameError:
-    # whitenoise not installed, skip
-    pass
 
 # ==============================================================================
 # LOGGING CONFIGURATION
@@ -144,7 +157,7 @@ REST_FRAMEWORK = {
     'DEFAULT_FILTER_BACKENDS': [
         'django_filters.rest_framework.DjangoFilterBackend',
         'rest_framework.filters.SearchFilter',
-        'rest_framework.filters.OrderingFilter',
+        'rest_filters.OrderingFilter',
     ],
 }
 
@@ -162,8 +175,14 @@ USE_TZ = True
 # ==============================================================================
 # SECRET KEY (use environment variable in production)
 # ==============================================================================
-# You can keep the same key or use environment variable
-# SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY', SECRET_KEY)
+# Try to get SECRET_KEY from environment, otherwise use a default (not recommended for production)
+import os
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    # For local testing only - in production, set this in PythonAnywhere env vars
+    from django.core.management.utils import get_random_secret_key
+    SECRET_KEY = get_random_secret_key()
+    print("⚠️ WARNING: Using generated SECRET_KEY. Set DJANGO_SECRET_KEY environment variable for production!")
 
 print(f"🚀 Running in PRODUCTION mode with SQLite database")
 print(f"📁 Static files root: {STATIC_ROOT}")
