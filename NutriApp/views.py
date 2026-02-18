@@ -13,7 +13,7 @@ from rest_framework.decorators import api_view
 from rest_framework.reverse import reverse
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, F, Sum
-from rest_framework.filters import OrderingFilter, SearchFilter
+from .filters import PractitionerFilter
 
 # Create your views here.
 
@@ -93,20 +93,12 @@ class PractitionerListView(generics.ListAPIView):
     queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
     permission_classes = [IsAuthenticated]
+    filterset_class = PractitionerFilter
 
     filter_backends=[
         DjangoFilterBackend,
         filters.SearchFilter,
         filters.OrderingFilter,
-    ]
-
-    filterset_fields= [
-        'specialties__name',
-        'city',
-        'currency',
-        'hourly_rate',
-        'years_of_experience',
-        'is_verified'
     ]
 
     search_fields = [
