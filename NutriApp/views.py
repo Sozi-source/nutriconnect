@@ -13,7 +13,7 @@ from rest_framework.decorators import api_view
 from rest_framework.reverse import reverse
 from django_filters.rest_framework import DjangoFilterBackend
 from django.db.models import Q, F, Sum
-from rest_framework.filters import OrderingFilter, SearchFilter
+from .filters import PractitionerFilter
 
 # Create your views here.
 
@@ -92,22 +92,14 @@ class SpecialtyDetailView(generics.RetrieveUpdateDestroyAPIView):
 class PractitionerListView(generics.ListAPIView):
     queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAdminUser,IsAuthenticated]
+    filterset_class = PractitionerFilter
 
     filter_backends=[
         DjangoFilterBackend,
         filters.SearchFilter,
         filters.OrderingFilter,
     ]
-
-    filterset_fields= {
-        'specialties__name': ['exact'],
-        'city': ['exact'],
-        'currency': ['exact'],
-        'hourly_rate': ['lt', 'gt', 'range'],
-        'experience_level': ['exact'],
-        'is_verified': ['exact'],
-    }
 
     search_fields = [
         'user__first_name',
@@ -119,7 +111,7 @@ class PractitionerListView(generics.ListAPIView):
 
     ordering_fields = [
         'hourly_rate',
-        'years_experience',
+        'years_of_experience',
         'user__first_name',
     ]
     ordering = ['user__first_name'] #default
