@@ -1,18 +1,28 @@
 """
-Production settings for NutriConnect API on PythonAnywhere
+Production settings for NutriConnect API on PythonAnywhere (Free Tier - SQLite)
 """
 
 from .settings import *
 import os
+from pathlib import Path
+
+# ==============================================================================
+# BASE DIRECTORY
+# ==============================================================================
+# Define BASE_DIR if not already defined in settings.py
+try:
+    BASE_DIR
+except NameError:
+    BASE_DIR = Path(__file__).resolve().parent.parent
 
 # ==============================================================================
 # CRITICAL SECURITY SETTINGS
 # ==============================================================================
 DEBUG = False
 
-# PythonAnywhere domain format: yourusername.pythonanywhere.com
+# PythonAnywhere domain
 ALLOWED_HOSTS = [
-    'osozi.pythonanywhere.com',  # Replace with your username
+    'osozi.pythonanywhere.com',
     '127.0.0.1',
     'localhost',
 ]
@@ -23,68 +33,43 @@ ALLOWED_HOSTS = [
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_CONTENT_TYPE_NOSNIFF = True
-# PythonAnywhere handles SSL, so SECURE_SSL_REDIRECT may not be needed
 SECURE_SSL_REDIRECT = False  # PythonAnywhere provides HTTPS automatically
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 
 # ==============================================================================
-# DATABASE - MySQL (PythonAnywhere's free tier)
+# DATABASE - FORCE SQLite for free tier
 # ==============================================================================
-# PythonAnywhere free tier uses MySQL
-# You'll create this in the PythonAnywhere dashboard
+# Override any existing database configuration to use SQLite
 DATABASES = {
     'default': {
-        'ENGINE': 'django.db.backends.mysql',
-        'NAME': 'osozi$nutriconnect',  # Format: username$dbname
-        'USER': 'osozi',
-        'PASSWORD': 'your-database-password',
-        'HOST': 'osozi.mysql.pythonanywhere-services.com',
-        'PORT': '',
-        'OPTIONS': {
-            'init_command': "SET sql_mode='STRICT_TRANS_TABLES'",
-        },
+        'ENGINE': 'django.db.backends.sqlite3',
+        'NAME': BASE_DIR / 'db.sqlite3',
     }
 }
 
 # ==============================================================================
-# STATIC FILES
+# STATIC FILES CONFIGURATION
 # ==============================================================================
 STATIC_URL = '/static/'
-STATIC_ROOT = '/home/osozi/NutriConnect/staticfiles'
-STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+STATIC_ROOT = '/home/osozi/nutriconnect/staticfiles'
 
 # ==============================================================================
-# MEDIA FILES
+# MEDIA FILES CONFIGURATION
 # ==============================================================================
 MEDIA_URL = '/media/'
-MEDIA_ROOT = '/home/osozi/NutriConnect/media'
+MEDIA_ROOT = '/home/osozi/nutriconnect/media'
 
 # ==============================================================================
-# CORS SETTINGS
+# SECRET KEY
 # ==============================================================================
-CORS_ALLOWED_ORIGINS = [
-    'https://osozi.pythonanywhere.com',
-    'http://osozi.pythonanywhere.com',
-]
+# Use environment variable or generate one
+import os
+SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
+if not SECRET_KEY:
+    from django.core.management.utils import get_random_secret_key
+    SECRET_KEY = get_random_secret_key()
+    print("⚠️ WARNING: Using generated SECRET_KEY. Set DJANGO_SECRET_KEY environment variable for production!")
 
-# ==============================================================================
-# LOGGING - Monitor on PythonAnywhere
-# ==============================================================================
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': '/home/osozi/NutriConnect/logs/django.log',
-        },
-    },
-    'root': {
-        'handlers': ['console', 'file'],
-        'level': 'INFO',
-    },
-}
+print(f"🚀 Running in PRODUCTION mode with SQLite database")
+print(f"📁 Database path: {DATABASES['default']['NAME']}")
