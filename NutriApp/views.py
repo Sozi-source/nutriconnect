@@ -105,7 +105,7 @@ class PractitionerListView(generics.ListAPIView):
         'city': ['exact'],
         'currency': ['exact'],
         'hourly_rate': ['lt', 'gt', 'range'],
-        'experience_level': ['exact'],
+        'years_of_experience': ['exact'],
         'is_verified': ['exact'],
     }
 
