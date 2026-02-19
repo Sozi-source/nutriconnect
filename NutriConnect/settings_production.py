@@ -9,7 +9,6 @@ from pathlib import Path
 # ==============================================================================
 # BASE DIRECTORY
 # ==============================================================================
-# Define BASE_DIR if not already defined in settings.py
 try:
     BASE_DIR
 except NameError:
@@ -20,7 +19,6 @@ except NameError:
 # ==============================================================================
 DEBUG = False
 
-# PythonAnywhere domain
 ALLOWED_HOSTS = [
     'osozi.pythonanywhere.com',
     '127.0.0.1',
@@ -33,12 +31,12 @@ ALLOWED_HOSTS = [
 SECURE_BROWSER_XSS_FILTER = True
 X_FRAME_OPTIONS = 'DENY'
 SECURE_CONTENT_TYPE_NOSNIFF = True
-SECURE_SSL_REDIRECT = False  # PythonAnywhere provides HTTPS automatically
+SECURE_SSL_REDIRECT = False
 CSRF_COOKIE_SECURE = True
 SESSION_COOKIE_SECURE = True
 
 # ==============================================================================
-# DATABASE - SQLite for free tier (MySQL requires paid account)
+# DATABASE - SQLite for free tier
 # ==============================================================================
 DATABASES = {
     'default': {
@@ -47,143 +45,90 @@ DATABASES = {
     }
 }
 
+INSTALLED_APPS += [
+    'corsheaders',  # Add if not already present
+]
+
+# CORS middleware must be at the top
+MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
+
+# Allow your Next.js frontend domains
+CORS_ALLOWED_ORIGINS = [
+    "http://localhost:3000",      # Next.js local development
+    "http://localhost:3001",      # Alternative port
+    "http://127.0.0.1:3000",
+    "https://your-frontend.vercel.app",  # Replace with your actual frontend URL
+    "https://your-custom-domain.com",     # If you have a custom domain
+]
+
+# If you need to allow credentials (cookies, authorization headers)
+CORS_ALLOW_CREDENTIALS = True
+
+# Allow all headers
+CORS_ALLOW_HEADERS = [
+    'accept',
+    'accept-encoding',
+    'authorization',
+    'content-type',
+    'dnt',
+    'origin',
+    'user-agent',
+    'x-csrftoken',
+    'x-requested-with',
+]
+
+# Allow all methods
+CORS_ALLOW_METHODS = [
+    'DELETE',
+    'GET',
+    'OPTIONS',
+    'PATCH',
+    'POST',
+    'PUT',
+]
+
+# CSRF trusted origins (for session authentication)
+CSRF_TRUSTED_ORIGINS = [
+    "http://localhost:3000",
+    "https://your-frontend.vercel.app",
+]
+
+# If you're having CORS issues during development, you can temporarily use:
+# CORS_ALLOW_ALL_ORIGINS = True  # Only for testing, NEVER in production!
+# But for production, always use CORS_ALLOWED_ORIGINS
+
+# ==============================================================================
+# SECURITY HEADERS
+# ==============================================================================
+SECURE_BROWSER_XSS_FILTER = True
+X_FRAME_OPTIONS = 'DENY'
+SECURE_CONTENT_TYPE_NOSNIFF = True
+SECURE_SSL_REDIRECT = False  # PythonAnywhere provides HTTPS automatically
+CSRF_COOKIE_SECURE = True
+SESSION_COOKIE_SECURE = True
+
+
+
+
 # ==============================================================================
 # STATIC FILES CONFIGURATION
 # ==============================================================================
 STATIC_URL = '/static/'
-STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
-
-# Create static directory if it doesn't exist
-os.makedirs(STATIC_ROOT, exist_ok=True)
+STATIC_ROOT = '/home/osozi/nutriconnect/staticfiles'
 
 # ==============================================================================
 # MEDIA FILES CONFIGURATION
 # ==============================================================================
 MEDIA_URL = '/media/'
-MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
-
-# Create media directory if it doesn't exist
-os.makedirs(MEDIA_ROOT, exist_ok=True)
+MEDIA_ROOT = '/home/osozi/nutriconnect/media'
 
 # ==============================================================================
-# CORS SETTINGS (if using django-cors-headers)
+# SECRET KEY
 # ==============================================================================
-# Only add these if you have 'corsheaders' in INSTALLED_APPS
-if 'corsheaders' in INSTALLED_APPS:
-    CORS_ALLOWED_ORIGINS = [
-        'https://osozi.pythonanywhere.com',
-        'http://osozi.pythonanywhere.com',
-    ]
-    CORS_ALLOW_CREDENTIALS = True
-
-# ==============================================================================
-# WHITENOISE CONFIGURATION (for static files)
-# ==============================================================================
-# Add whitenoise to middleware if installed
-if 'whitenoise' in INSTALLED_APPS:
-    # Insert after SecurityMiddleware or at position 1
-    security_middleware = 'django.middleware.security.SecurityMiddleware'
-    whitenoise_middleware = 'whitenoise.middleware.WhiteNoiseMiddleware'
-    
-    if security_middleware in MIDDLEWARE:
-        idx = MIDDLEWARE.index(security_middleware) + 1
-        MIDDLEWARE.insert(idx, whitenoise_middleware)
-    else:
-        MIDDLEWARE.insert(1, whitenoise_middleware)
-    
-    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
-
-# ==============================================================================
-# LOGGING CONFIGURATION
-# ==============================================================================
-LOGGING = {
-    'version': 1,
-    'disable_existing_loggers': False,
-    'formatters': {
-        'verbose': {
-            'format': '{levelname} {asctime} {module} {process:d} {thread:d} {message}',
-            'style': '{',
-        },
-        'simple': {
-            'format': '{levelname} {message}',
-            'style': '{',
-        },
-    },
-    'handlers': {
-        'console': {
-            'class': 'logging.StreamHandler',
-            'formatter': 'simple',
-        },
-        'file': {
-            'class': 'logging.FileHandler',
-            'filename': os.path.join(BASE_DIR, 'logs', 'django.log'),
-            'formatter': 'verbose',
-        },
-    },
-    'root': {
-        'handlers': ['console', 'file'],
-        'level': 'INFO',
-    },
-    'loggers': {
-        'django': {
-            'handlers': ['console', 'file'],
-            'level': 'INFO',
-            'propagate': False,
-        },
-        'NutriApp': {
-            'handlers': ['console', 'file'],
-            'level': 'DEBUG',
-            'propagate': False,
-        },
-    },
-}
-
-# Create logs directory
-os.makedirs(os.path.join(BASE_DIR, 'logs'), exist_ok=True)
-
-# ==============================================================================
-# DJANGO REST FRAMEWORK SETTINGS
-# ==============================================================================
-REST_FRAMEWORK = {
-    'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
-    ],
-    'DEFAULT_PERMISSION_CLASSES': [
-        'rest_framework.permissions.IsAuthenticated',
-    ],
-    'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
-    'PAGE_SIZE': 20,
-    'DEFAULT_FILTER_BACKENDS': [
-        'django_filters.rest_framework.DjangoFilterBackend',
-        'rest_framework.filters.SearchFilter',
-        'rest_filters.OrderingFilter',
-    ],
-}
-
-# ==============================================================================
-# CUSTOM USER MODEL
-# ==============================================================================
-AUTH_USER_MODEL = 'NutriApp.User'
-
-# ==============================================================================
-# TIME ZONE
-# ==============================================================================
-TIME_ZONE = 'Africa/Nairobi'
-USE_TZ = True
-
-# ==============================================================================
-# SECRET KEY (use environment variable in production)
-# ==============================================================================
-# Try to get SECRET_KEY from environment, otherwise use a default (not recommended for production)
-import os
 SECRET_KEY = os.environ.get('DJANGO_SECRET_KEY')
 if not SECRET_KEY:
-    # For local testing only - in production, set this in PythonAnywhere env vars
     from django.core.management.utils import get_random_secret_key
     SECRET_KEY = get_random_secret_key()
-    print("⚠️ WARNING: Using generated SECRET_KEY. Set DJANGO_SECRET_KEY environment variable for production!")
+    print("⚠️ WARNING: Using generated SECRET_KEY. Set DJANGO_SECRET_KEY environment variable!")
 
 print(f"🚀 Running in PRODUCTION mode with SQLite database")
-print(f"📁 Static files root: {STATIC_ROOT}")
-print(f"📁 Media files root: {MEDIA_ROOT}")
