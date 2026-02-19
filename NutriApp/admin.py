@@ -6,20 +6,7 @@ from .models import (
     Availability, Consultation, Review
 )
 
-<<<<<<< HEAD
-# Custom User Admin
-=======
-# Register your models here.
-from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.utils.html import format_html
-from .models import (
-    User, UserProfile, Specialty, Practitioner, 
-    Availability, Consultation, Review
-)
-
 # Custom User Admin (since you're using email as username)
->>>>>>> 92858130dfb3b0ac61c301852f53ac5173392517
 class UserAdmin(BaseUserAdmin):
     list_display = ('email', 'first_name', 'last_name', 'get_role', 'is_staff', 'is_active')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'profile__role')
@@ -52,23 +39,7 @@ class UserAdmin(BaseUserAdmin):
 class UserProfileAdmin(admin.ModelAdmin):
     list_display = ('user', 'role', 'phone')
     list_filter = ('role',)
-<<<<<<< HEAD
     search_fields = ('user__email', 'user__first_name', 'user__last_name')
-
-# Specialty Admin
-class SpecialtyAdmin(admin.ModelAdmin):
-    list_display = ('name', 'description')
-    search_fields = ('name',)
-
-# Practitioner Admin
-class PractitionerAdmin(admin.ModelAdmin):
-    list_display = ('user_email', 'user_name', 'city', 'get_specialties', 'hourly_rate', 'currency', 'is_verified')
-    list_filter = ('is_verified', 'city', 'currency')
-    search_fields = ('user__email', 'user__first_name', 'user__last_name', 'bio', 'city')
-    actions = ['approve_practitioners']
-=======
-    search_fields = ('user__email', 'user__first_name', 'user__last_name', 'phone')
-    raw_id_fields = ('user',)
 
 # Specialty Admin
 class SpecialtyAdmin(admin.ModelAdmin):
@@ -113,42 +84,14 @@ class PractitionerAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
->>>>>>> 92858130dfb3b0ac61c301852f53ac5173392517
     
     def user_email(self, obj):
         return obj.user.email
-    user_email.short_description = 'Email'
-<<<<<<< HEAD
-=======
     user_email.admin_order_field = 'user__email'
->>>>>>> 92858130dfb3b0ac61c301852f53ac5173392517
     
     def user_name(self, obj):
         return f"{obj.user.first_name} {obj.user.last_name}"
     user_name.short_description = 'Name'
-<<<<<<< HEAD
-    
-    def get_specialties(self, obj):
-        return ", ".join([s.name for s in obj.specialties.all()]) or "—"
-    get_specialties.short_description = 'Specialties'
-    
-    def approve_practitioners(self, request, queryset):
-        updated = queryset.update(is_verified=True)
-        self.message_user(request, f'✅ {updated} practitioner(s) approved.')
-    approve_practitioners.short_description = "Approve selected practitioners"
-
-# Availability Admin
-class AvailabilityAdmin(admin.ModelAdmin):
-    list_display = ('practitioner', 'day_of_week', 'start_time', 'end_time')
-    list_filter = ('day_of_week',)
-    search_fields = ('practitioner__user__email',)
-
-# Consultation Admin
-class ConsultationAdmin(admin.ModelAdmin):
-    list_display = ('id', 'client', 'practitioner', 'date', 'time', 'status')
-    list_filter = ('status', 'date')
-    search_fields = ('client__email', 'practitioner__user__email')
-=======
     user_name.admin_order_field = 'user__first_name'
     
     def specialties_list(self, obj):
@@ -194,7 +137,6 @@ class ConsultationAdmin(admin.ModelAdmin):
     list_filter = ('status', 'date', 'practitioner__city')
     search_fields = ('client__email', 'practitioner__user__email', 'client_notes')
     raw_id_fields = ('client', 'practitioner')
->>>>>>> 92858130dfb3b0ac61c301852f53ac5173392517
     readonly_fields = ('created_at', 'updated_at', 'version')
     
     fieldsets = (
@@ -209,14 +151,6 @@ class ConsultationAdmin(admin.ModelAdmin):
             'classes': ('collapse',)
         }),
     )
-<<<<<<< HEAD
-
-# Review Admin
-class ReviewAdmin(admin.ModelAdmin):
-    list_display = ('consultation', 'reviewer', 'rating', 'created_at')
-    list_filter = ('rating',)
-    search_fields = ('reviewer__email', 'comment')
-=======
     
     def client_info(self, obj):
         return obj.client.get_full_name() or obj.client.email
@@ -264,7 +198,6 @@ class ReviewAdmin(admin.ModelAdmin):
             colors[obj.rating - 1], stars
         )
     rating_stars.short_description = 'Rating'
->>>>>>> 92858130dfb3b0ac61c301852f53ac5173392517
 
 # Register all models
 admin.site.register(User, UserAdmin)
@@ -277,10 +210,5 @@ admin.site.register(Review, ReviewAdmin)
 
 # Customize admin site
 admin.site.site_header = "NutriConnect Administration"
-<<<<<<< HEAD
-admin.site.site_title = "NutriConnect Admin"
-admin.site.index_title = "Welcome to NutriConnect Admin Portal"
-=======
 admin.site.site_title = "NutriConnect Admin Portal"
 admin.site.index_title = "Welcome to NutriConnect Admin Dashboard"
->>>>>>> 92858130dfb3b0ac61c301852f53ac5173392517
