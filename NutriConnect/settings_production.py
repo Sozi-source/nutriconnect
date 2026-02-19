@@ -28,10 +28,7 @@ ALLOWED_HOSTS = [
 
 # ==============================================================================
 # CORS CONFIGURATION - FIXED AND IMPROVED
-# ==============================================================================
-INSTALLED_APPS += [
-    'corsheaders',
-]
+# ==============================================================================]
 
 # CORS middleware must be at the top
 if 'corsheaders.middleware.CorsMiddleware' not in MIDDLEWARE:
