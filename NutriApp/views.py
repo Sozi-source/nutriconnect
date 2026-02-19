@@ -92,7 +92,7 @@ class SpecialtyDetailView(generics.RetrieveUpdateDestroyAPIView):
 class PractitionerListView(generics.ListAPIView):
     queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
-    permission_classes = [IsAdminUser,IsAuthenticated]
+    permission_classes = [IsAuthenticated]
     filterset_class = PractitionerFilter
 
     filter_backends=[
