@@ -1,3 +1,5 @@
+<<<<<<< HEAD
+=======
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.html import format_html
@@ -212,3 +214,4 @@ admin.site.register(Review, ReviewAdmin)
 admin.site.site_header = "NutriConnect Administration"
 admin.site.site_title = "NutriConnect Admin Portal"
 admin.site.index_title = "Welcome to NutriConnect Admin Dashboard"
+>>>>>>> 11097e5536c7c111497c49bc188e7c802e225c68
