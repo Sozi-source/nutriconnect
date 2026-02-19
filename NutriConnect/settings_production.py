@@ -49,6 +49,16 @@ INSTALLED_APPS += [
     'corsheaders',  # Add if not already present
 ]
 
+# Django REST Framework settings
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': [
+        'rest_framework.authentication.TokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
+    ],
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+}
 # CORS middleware must be at the top
 MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
 
