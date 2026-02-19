@@ -16,9 +16,11 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from NutriApp.views import debug_auth
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('api-auth/', include('rest_framework.urls')),
-    path('', include('NutriApp.urls'))
+    path('', include('NutriApp.urls')),
+    path('api/debug-auth/', debug_auth, name='debug-auth'),
 ]

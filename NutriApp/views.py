@@ -430,3 +430,49 @@ def api_root(request, format=None):
             'update': '/reviews/{id}/update/',
         },
     })
+# Debug view to test authentication
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.response import Response
+from rest_framework import status
+
+@api_view(['GET'])
+@permission_classes([])  # Allow anyone for testing
+def debug_auth(request):
+    """Debug endpoint to check authentication"""
+    auth_header = request.META.get('HTTP_AUTHORIZATION', 'No header')
+    
+    # Try to parse token
+    token = None
+    if auth_header.startswith('Token '):
+        token = auth_header[6:]
+    elif auth_header.startswith('token '):
+        token = auth_header[6:]
+    
+    from rest_framework.authtoken.models import Token
+    token_valid = False
+    user_info = None
+    
+    if token:
+        try:
+            token_obj = Token.objects.get(key=token)
+            token_valid = True
+            user_info = {
+                'id': token_obj.user.id,
+                'email': token_obj.user.email,
+                'first_name': token_obj.user.first_name,
+                'last_name': token_obj.user.last_name,
+            }
+        except Token.DoesNotExist:
+            token_valid = False
+    
+    return Response({
+        'authenticated': request.user.is_authenticated,
+        'user': str(request.user),
+        'user_id': request.user.id if request.user.is_authenticated else None,
+        'auth_header': auth_header,
+        'token_provided': token is not None,
+        'token_valid': token_valid,
+        'user_info': user_info,
+        'request_method': request.method,
+        'request_path': request.path,
+    })
