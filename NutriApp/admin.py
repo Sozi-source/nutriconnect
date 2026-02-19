@@ -1,4 +1,3 @@
-
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.html import format_html
@@ -7,6 +6,7 @@ from .models import (
     Availability, Consultation, Review
 )
 
+# Custom User Admin
 class UserAdmin(BaseUserAdmin):
     list_display = ('email', 'first_name', 'last_name', 'get_role', 'is_staff', 'is_active')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'profile__role')
@@ -30,9 +30,9 @@ class UserAdmin(BaseUserAdmin):
     def get_role(self, obj):
         if hasattr(obj, 'profile'):
             if obj.profile.role == 'practitioner':
-                return format_html('<span style="color: #28a745;">🏥 Practitioner</span>')
-            return format_html('<span style="color: #17a2b8;">👤 Client</span>')
-        return format_html('<span style="color: #6c757d;">⚠️ No Profile</span>')
+                return format_html('<span style="color: #28a745;">[PRACTITIONER]</span>')
+            return format_html('<span style="color: #17a2b8;">[CLIENT]</span>')
+        return format_html('<span style="color: #6c757d;">[NO PROFILE]</span>')
     get_role.short_description = 'Role'
 
 # UserProfile Admin
@@ -95,29 +95,29 @@ class PractitionerAdmin(admin.ModelAdmin):
     user_name.admin_order_field = 'user__first_name'
     
     def specialties_list(self, obj):
-        return ", ".join([s.name for s in obj.specialties.all()]) or "—"
+        return ", ".join([s.name for s in obj.specialties.all()]) or "-"
     specialties_list.short_description = 'Specialties'
     
     def verification_badge(self, obj):
         if obj.is_verified:
             return format_html(
                 '<span style="background: #28a745; color: white; padding: 5px 10px; '
-                'border-radius: 3px; font-weight: bold;">✓ VERIFIED</span>'
+                'border-radius: 3px; font-weight: bold;">VERIFIED</span>'
             )
         return format_html(
                 '<span style="background: #ffc107; color: black; padding: 5px 10px; '
-                'border-radius: 3px; font-weight: bold;">⏳ PENDING</span>'
+                'border-radius: 3px; font-weight: bold;">PENDING</span>'
         )
     verification_badge.short_description = 'Status'
     
     def approve_practitioners(self, request, queryset):
         updated = queryset.update(is_verified=True)
-        self.message_user(request, f'✅ {updated} practitioner(s) approved successfully.')
+        self.message_user(request, f'{updated} practitioner(s) approved successfully.')
     approve_practitioners.short_description = "Approve selected practitioners"
     
     def unapprove_practitioners(self, request, queryset):
         updated = queryset.update(is_verified=False)
-        self.message_user(request, f'⏳ {updated} practitioner(s) set to pending.')
+        self.message_user(request, f'{updated} practitioner(s) set to pending.')
     unapprove_practitioners.short_description = "Set as pending"
 
 # Availability Admin
