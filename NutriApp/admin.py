@@ -1,3 +1,4 @@
+
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from django.utils.html import format_html
@@ -6,20 +7,6 @@ from .models import (
     Availability, Consultation, Review
 )
 
-<<<<<<< HEAD
-# Custom User Admin
-=======
-# Register your models here.
-from django.contrib import admin
-from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
-from django.utils.html import format_html
-from .models import (
-    User, UserProfile, Specialty, Practitioner, 
-    Availability, Consultation, Review
-)
-
-# Custom User Admin (since you're using email as username)
->>>>>>> 92858130dfb3b0ac61c301852f53ac5173392517
 class UserAdmin(BaseUserAdmin):
     list_display = ('email', 'first_name', 'last_name', 'get_role', 'is_staff', 'is_active')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'profile__role')
