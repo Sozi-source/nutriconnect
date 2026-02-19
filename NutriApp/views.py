@@ -17,6 +17,18 @@ from .filters import PractitionerFilter
 
 # Create your views here.
 
+@api_view(['GET'])
+@permission_classes([AllowAny])
+def health_check(request):
+    """
+    Public endpoint to check if API is running
+    """
+    return Response({
+        'status': 'healthy',
+        'message': 'NutriConnect API is running',
+        'version': '1.0'
+    })
+
 class RegisterUserView(generics.CreateAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializer
@@ -67,12 +79,12 @@ class UserProfileCreateView(generics.CreateAPIView):
 class UserProfileDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = UserProfile.objects.all()
     serializer_class =UserProfileSerializer
-    permission_classes= [IsAuthenticated, IsRelatedUserOwnerOrAdmin]
+    permission_classes= [IsAuthenticated]
 
 class UserProfileListView(generics.ListAPIView):
     queryset = UserProfile.objects.all()
     serializer_class =UserProfileSerializer
-    permission_classes =[IsAuthenticated, IsAdminUser]
+    permission_classes =[IsAuthenticated]
 
 class SpecialtyListView(generics.ListAPIView):
     queryset = Specialty.objects.all()
@@ -120,7 +132,7 @@ class PractitionerListView(generics.ListAPIView):
 class PractitionerDetailView(generics.RetrieveAPIView):
     queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
-    permission_classes = [IsAdminUser]
+    permission_classes = [IsAuthenticated]
 
 class PractitionerCreateView(generics.CreateAPIView):
     queryset = Practitioner.objects.all()

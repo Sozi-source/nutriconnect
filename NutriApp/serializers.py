@@ -63,9 +63,14 @@ class AvailabilitySerializer(serializers.ModelSerializer):
         fields = ['id', 'practitioner', 'day_of_week', 'start_time', 'end_time']
 
 class PractitionerSerializer(serializers.ModelSerializer):
+    first_name = serializers.CharField(source='user.first_name', read_only=True)
+    last_name = serializers.CharField(source='user.last_name', read_only=True)
+    email = serializers.CharField(source='user.email', read_only=True)
+    specialties = SpecialtySerializer(many=True, read_only=True)
+
     class Meta:
         model = Practitioner
-        fields = ['id', 'user', 'bio', 'currency','hourly_rate', 'specialties']
+        fields = ['id', 'user', 'first_name', 'last_name', 'email', 'bio', 'currency','hourly_rate', 'specialties']
 
 class ReviewSerializer(serializers.ModelSerializer):
     class Meta:

@@ -36,6 +36,8 @@ consultation_patterns = [
 
 # Main URL patterns
 urlpatterns = [
+    # Public health check 
+    path('', views.health_check, name='health-check'),
     # Authentication & User Profile
     path('', views.api_root, name='api-root'),
     path('register/', views.RegisterUserView.as_view(), name='register'),
