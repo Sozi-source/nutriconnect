@@ -7,10 +7,6 @@ from .models import (
     Availability, Consultation, Review
 )
 
-<<<<<<< HEAD
-# Custom User Admin (since you're using email as username)
-=======
->>>>>>> 724b1ad854b298bff14da83a0f3130be0189792f
 class UserAdmin(BaseUserAdmin):
     list_display = ('email', 'first_name', 'last_name', 'get_role', 'is_staff', 'is_active')
     list_filter = ('is_staff', 'is_superuser', 'is_active', 'profile__role')
