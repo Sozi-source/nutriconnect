@@ -213,12 +213,21 @@ class ConsultationSerializer(serializers.ModelSerializer):
         return obj.time.strftime('%I:%M %p')
     
     def validate(self, data):
-        practitioner = data.get('practitioner')
+        practitioner_id = data.get('practitioner')
         booking_date = data.get('date')
         booking_time = data.get('time')
         
-        if not all([practitioner, booking_date, booking_time]):
+        if not all([practitioner_id, booking_date, booking_time]):
             return data
+        
+        # Get the practitioner object from the ID
+        from .models import Practitioner
+        try:
+            practitioner = Practitioner.objects.get(id=practitioner_id)
+        except Practitioner.DoesNotExist:
+            raise serializers.ValidationError({
+                'practitioner': 'Practitioner with this ID does not exist'
+            })
         
         # Check if already booked
         if Consultation.objects.filter(
@@ -255,6 +264,8 @@ class ConsultationSerializer(serializers.ModelSerializer):
         if booking_datetime < timezone.now():
             raise serializers.ValidationError("Cannot book appointments in the past")
         
+        # Replace the ID with the actual practitioner object for the serializer to save
+        data['practitioner'] = practitioner
         return data
 
 class ConsultationCreateSerializer(serializers.ModelSerializer):
