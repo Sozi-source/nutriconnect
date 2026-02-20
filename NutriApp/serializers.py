@@ -35,17 +35,31 @@ class UserSerializer(serializers.ModelSerializer):
         role = validated_data.pop('role', 'client')
         phone = validated_data.pop('phone', '')
 
-        # create user
+        # Create user
         user = User.objects.create_user(**validated_data)
 
-        # Update or create profile
-        if hasattr(user, 'profile'):
-            profile = user.profile
-            profile.role = role
-            profile.phone = phone
-            profile.save()
-        else:
-            UserProfile.objects.create(user=user, role=role, phone=phone)
+        # Create profile
+        profile = UserProfile.objects.create(
+            user=user, 
+            role=role, 
+            phone=phone
+        )
+        
+        # AUTO-CREATE PRACTITIONER if role is practitioner
+        if role == 'practitioner':
+            from .models import Practitioner  # Import here to avoid circular imports
+            Practitioner.objects.create(
+                user=user,
+                hourly_rate=0.00,  # Default values - they can update later
+                currency='KES',
+                city='',
+                bio='',
+                years_of_experience=0,
+                is_verified=False,
+                profile_complete=False
+            )
+            print(f"✅ Auto-created practitioner record for {user.email}")
+        
         return user
 
 # ==================== SPECIALTY SERIALIZER ====================
