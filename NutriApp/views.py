@@ -3,7 +3,12 @@ from rest_framework import generics
 from rest_framework.decorators import api_view, permission_classes 
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser, AllowAny
 from .models import User, UserProfile, Specialty, Practitioner, Review, Availability, Consultation
-from .serializers import UserSerializer, ReviewSerializer, UserProfileSerializer, SpecialtySerializer, ConsultationSerializer, PractitionerSerializer, AvailabilitySerializer
+from .serializers import (
+    UserSerializer, ReviewSerializer, UserProfileSerializer, SpecialtySerializer, 
+    ConsultationSerializer, PractitionerSerializer, AvailabilitySerializer,
+    PractitionerDetailSerializer, BulkAvailabilitySerializer, TimeSlotSerializer,
+    ConsultationCreateSerializer
+)
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser, AllowAny
 from .permissions import IsOwnerOrAdmin, IsConsultationClientOrAdmin, IsRelatedUserOwnerOrAdmin, IsAvailabilityOwnerOrAdmin, IsReviewOwnerOrAdmin, IsConsultationParticipantOrAdmin
 from rest_framework.exceptions import ValidationError
@@ -14,8 +19,12 @@ from rest_framework import status, filters
 from rest_framework.decorators import api_view
 from rest_framework.reverse import reverse
 from django_filters.rest_framework import DjangoFilterBackend
-from django.db.models import Q, F, Sum
+from django.db.models import Q, F, Sum, Count
 from .filters import PractitionerFilter
+from datetime import datetime, timedelta, date
+from django.utils import timezone
+from rest_framework.views import APIView
+from django.shortcuts import get_object_or_404
 
 # Create your views here.
 
@@ -81,12 +90,32 @@ class UserProfileCreateView(generics.CreateAPIView):
 class UserProfileDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = UserProfile.objects.all()
     serializer_class =UserProfileSerializer
-    permission_classes= [IsAuthenticated]
+    permission_classes= [IsAuthenticated, IsOwnerOrAdmin]
 
 class UserProfileListView(generics.ListAPIView):
     queryset = UserProfile.objects.all()
     serializer_class =UserProfileSerializer
     permission_classes =[IsAuthenticated]
+
+class MyProfileView(generics.RetrieveAPIView):
+    """Get the current user's profile"""
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        profile, created = UserProfile.objects.get_or_create(
+            user=self.request.user,
+            defaults={'role': 'client'}
+        )
+        return profile
+
+class UserProfileUpdateView(generics.UpdateAPIView):
+    """Update the current user's profile"""
+    serializer_class = UserProfileSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        return get_object_or_404(UserProfile, user=self.request.user)
 
 class SpecialtyListView(generics.ListAPIView):
     queryset = Specialty.objects.all()
@@ -101,10 +130,10 @@ class SpecialtyListView(generics.ListAPIView):
 class SpecialtyDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Specialty.objects.all()
     serializer_class = SpecialtySerializer
-    permission_classes =[IsAuthenticated]
+    permission_classes =[IsAuthenticated, IsAdminUser]
 
 class PractitionerListView(generics.ListAPIView):
-    queryset = Practitioner.objects.all()
+    queryset = Practitioner.objects.filter(is_verified=True)
     serializer_class = PractitionerSerializer
     permission_classes = [IsAuthenticated]
     filterset_class = PractitionerFilter
@@ -133,7 +162,7 @@ class PractitionerListView(generics.ListAPIView):
 
 class PractitionerDetailView(generics.RetrieveAPIView):
     queryset = Practitioner.objects.all()
-    serializer_class = PractitionerSerializer
+    serializer_class = PractitionerDetailSerializer
     permission_classes = [IsAuthenticated]
 
 class PractitionerCreateView(generics.CreateAPIView):
@@ -146,10 +175,251 @@ class PractitionerUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     serializer_class = PractitionerSerializer
     permission_classes = [IsAdminUser]
 
+# ==================== ENHANCED AVAILABILITY VIEWS ====================
+
+class IsPractitionerOwner(permissions.BasePermission):
+    """Custom permission to only allow practitioners to edit their own availability"""
+    
+    def has_permission(self, request, view):
+        return request.user.is_authenticated and hasattr(request.user, 'practitioner')
+    
+    def has_object_permission(self, request, view, obj):
+        return obj.practitioner.user == request.user
+
+class AvailabilityListCreateView(generics.ListCreateAPIView):
+    """List and create availability slots for the logged-in practitioner"""
+    serializer_class = AvailabilitySerializer
+    permission_classes = [IsAuthenticated, IsPractitionerOwner]
+    
+    def get_queryset(self):
+        practitioner = get_object_or_404(Practitioner, user=self.request.user)
+        return Availability.objects.filter(practitioner=practitioner)
+    
+    def perform_create(self, serializer):
+        practitioner = get_object_or_404(Practitioner, user=self.request.user)
+        serializer.save(practitioner=practitioner)
+
+class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """Retrieve, update or delete a specific availability slot"""
+    serializer_class = AvailabilitySerializer
+    permission_classes = [IsAuthenticated, IsPractitionerOwner]
+    
+    def get_queryset(self):
+        practitioner = get_object_or_404(Practitioner, user=self.request.user)
+        return Availability.objects.filter(practitioner=practitioner)
+
+class BulkAvailabilityCreateView(APIView):
+    """Create multiple weekly availability slots at once"""
+    permission_classes = [IsAuthenticated]
+    
+    def post(self, request):
+        # Ensure user has a practitioner profile
+        if not hasattr(request.user, 'practitioner'):
+            return Response(
+                {'error': 'You must have a practitioner profile to set availability'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        serializer = BulkAvailabilitySerializer(data=request.data)
+        if serializer.is_valid():
+            created_slots = serializer.save()
+            response_serializer = AvailabilitySerializer(created_slots, many=True)
+            return Response({
+                'message': f'Created {len(created_slots)} availability slots',
+                'slots': response_serializer.data
+            }, status=status.HTTP_201_CREATED)
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+class PractitionerAvailabilityView(generics.ListAPIView):
+    """Public view to get availability for a specific practitioner"""
+    serializer_class = AvailabilitySerializer
+    permission_classes = [AllowAny]
+    
+    def get_queryset(self):
+        practitioner_id = self.kwargs['practitioner_id']
+        practitioner = get_object_or_404(Practitioner, id=practitioner_id, is_verified=True)
+        
+        # Return all available slots (is_available=True)
+        return Availability.objects.filter(
+            practitioner=practitioner,
+            is_available=True
+        )
+
+class AvailableTimeSlotsView(APIView):
+    """Get all available time slots for a practitioner within a date range"""
+    permission_classes = [AllowAny]
+    
+    def get(self, request, practitioner_id):
+        practitioner = get_object_or_404(Practitioner, id=practitioner_id, is_verified=True)
+        
+        # Get date range from query params
+        start_date = request.query_params.get('start_date')
+        end_date = request.query_params.get('end_date')
+        
+        if not start_date or not end_date:
+            # Default to next 30 days
+            start_date = timezone.now().date()
+            end_date = start_date + timedelta(days=30)
+        else:
+            try:
+                start_date = datetime.strptime(start_date, '%Y-%m-%d').date()
+                end_date = datetime.strptime(end_date, '%Y-%m-%d').date()
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid date format. Use YYYY-MM-DD'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Get all availability rules
+        weekly_rules = Availability.objects.filter(
+            practitioner=practitioner,
+            recurrence_type='weekly',
+            is_available=True
+        )
+        
+        one_time_slots = Availability.objects.filter(
+            practitioner=practitioner,
+            recurrence_type='one_time',
+            specific_date__range=[start_date, end_date],
+            is_available=True
+        )
+        
+        unavailable_blocks = Availability.objects.filter(
+            practitioner=practitioner,
+            recurrence_type='unavailable',
+            specific_date__range=[start_date, end_date],
+            is_available=False
+        )
+        
+        # Generate all possible time slots
+        available_slots = []
+        current_date = start_date
+        
+        while current_date <= end_date:
+            day_of_week = current_date.weekday()
+            
+            # Check if this date is in unavailable blocks
+            is_unavailable = unavailable_blocks.filter(
+                specific_date=current_date
+            ).exists()
+            
+            if not is_unavailable:
+                # Check weekly rules for this day
+                day_rules = weekly_rules.filter(day_of_week=day_of_week)
+                
+                for rule in day_rules:
+                    # Check if this specific time slot is already booked
+                    is_booked = Consultation.objects.filter(
+                        practitioner=practitioner,
+                        date=current_date,
+                        time=rule.start_time,
+                        status__in=['booked', 'completed']
+                    ).exists()
+                    
+                    if not is_booked:
+                        available_slots.append({
+                            'date': current_date,
+                            'start_time': rule.start_time,
+                            'end_time': rule.end_time,
+                            'practitioner_id': practitioner.id,
+                            'practitioner_name': practitioner.user.get_full_name()
+                        })
+                
+                # Add one-time slots for this date
+                for slot in one_time_slots.filter(specific_date=current_date):
+                    is_booked = Consultation.objects.filter(
+                        practitioner=practitioner,
+                        date=current_date,
+                        time=slot.start_time,
+                        status__in=['booked', 'completed']
+                    ).exists()
+                    
+                    if not is_booked:
+                        available_slots.append({
+                            'date': current_date,
+                            'start_time': slot.start_time,
+                            'end_time': slot.end_time,
+                            'practitioner_id': practitioner.id,
+                            'practitioner_name': practitioner.user.get_full_name()
+                        })
+            
+            current_date += timedelta(days=1)
+        
+        serializer = TimeSlotSerializer(available_slots, many=True)
+        return Response(serializer.data)
+
+class CheckTimeSlotAvailabilityView(APIView):
+    """Check if a specific time slot is available"""
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        practitioner_id = request.data.get('practitioner')
+        booking_date = request.data.get('date')
+        booking_time = request.data.get('time')
+        
+        if not all([practitioner_id, booking_date, booking_time]):
+            return Response({
+                'available': False,
+                'error': 'Missing required fields (practitioner, date, time)'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        try:
+            booking_date = datetime.strptime(booking_date, '%Y-%m-%d').date()
+            booking_time = datetime.strptime(booking_time, '%H:%M:%S').time()
+        except ValueError:
+            return Response({
+                'available': False,
+                'error': 'Invalid date or time format. Use YYYY-MM-DD for date and HH:MM:SS for time'
+            }, status=status.HTTP_400_BAD_REQUEST)
+        
+        practitioner = get_object_or_404(Practitioner, id=practitioner_id)
+        
+        # Check if already booked
+        if Consultation.objects.filter(
+            practitioner=practitioner,
+            date=booking_date,
+            time=booking_time,
+            status__in=['booked', 'completed']
+        ).exists():
+            return Response({
+                'available': False,
+                'reason': 'This time slot is already booked'
+            })
+        
+        # Check if date is in the past
+        booking_datetime = datetime.combine(booking_date, booking_time)
+        if timezone.is_naive(booking_datetime):
+            booking_datetime = timezone.make_aware(booking_datetime)
+        
+        if booking_datetime < timezone.now():
+            return Response({
+                'available': False,
+                'reason': 'Cannot book appointments in the past'
+            })
+        
+        # Use practitioner's availability method
+        is_available = practitioner.is_available_at(booking_date, booking_time)
+        
+        if is_available:
+            return Response({
+                'available': True,
+                'message': 'This time slot is available'
+            })
+        else:
+            return Response({
+                'available': False,
+                'reason': 'Practitioner is not available at this time'
+            })
+
 class AvailabilityCreateView(generics.CreateAPIView):
+    """Legacy view for backward compatibility"""
     queryset = Availability.objects.all()
     serializer_class = AvailabilitySerializer
     permission_classes = [IsAuthenticated]
+
+    def perform_create(self, serializer):
+        practitioner = get_object_or_404(Practitioner, user=self.request.user)
+        serializer.save(practitioner=practitioner)
 
 class AvailabilityListView(generics.ListAPIView):
     serializer_class = AvailabilitySerializer
@@ -163,9 +433,11 @@ class AvailabilityListView(generics.ListAPIView):
     filterset_fields = {
         'day_of_week': ['exact', 'gte', 'lte'],
         'practitioner': ['exact'],
+        'recurrence_type': ['exact'],
+        'is_available': ['exact'],
     }
     
-    ordering_fields = ['day_of_week', 'start_time', 'end_time']
+    ordering_fields = ['day_of_week', 'start_time', 'end_time', 'created_at']
     ordering = ['day_of_week', 'start_time']
 
     def get_queryset(self):
@@ -174,16 +446,17 @@ class AvailabilityListView(generics.ListAPIView):
             return Availability.objects.all()
         return Availability.objects.filter(practitioner__user=user)
 
-
-class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
-    queryset = Availability.objects.all()
-    serializer_class = AvailabilitySerializer
-    permission_classes = [IsAuthenticated, IsAvailabilityOwnerOrAdmin]
+# ==================== CONSULTATION VIEWS ====================
 
 class ConsultationCreateView(generics.CreateAPIView):
     queryset = Consultation.objects.all()
-    serializer_class = ConsultationSerializer
+    serializer_class = ConsultationCreateSerializer
     permission_classes = [IsAuthenticated]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
     def perform_create(self, serializer):
         serializer.save(client=self.request.user)
@@ -201,6 +474,7 @@ class ConsultationListView(generics.ListAPIView):
         'date': ['exact', 'gte', 'lte'],
         'status': ['exact'],
         'practitioner__user__email': ['exact'],
+        'practitioner': ['exact'],
     }
     
     ordering_fields = ['date', 'time', 'created_at']
@@ -210,19 +484,42 @@ class ConsultationListView(generics.ListAPIView):
         user = self.request.user
         if user.is_staff:
             return Consultation.objects.all()
-        return Consultation.objects.filter(client=user)|Consultation.objects.filter(practitioner__user=user)
-       
+        return Consultation.objects.filter(
+            Q(client=user) | Q(practitioner__user=user)
+        ).select_related('client', 'practitioner__user')
 
 class ConsultationDetailView(generics.RetrieveUpdateDestroyAPIView):
     queryset = Consultation.objects.all()
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated, IsConsultationParticipantOrAdmin]
     
+    def perform_destroy(self, instance):
+        # Only allow cancellation, not hard delete
+        instance.status = 'cancelled'
+        instance.save()
 
 class ConsultationStatusUpdateView(generics.UpdateAPIView):
     queryset = Consultation.objects.all()
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated, IsConsultationParticipantOrAdmin]
+
+    def update(self, request, *args, **kwargs):
+        partial = kwargs.pop('partial', True)
+        instance = self.get_object()
+        
+        # Only allow updating status
+        new_status = request.data.get('status')
+        if new_status not in ['completed', 'cancelled', 'no_show']:
+            return Response(
+                {'error': 'Invalid status. Allowed values: completed, cancelled, no_show'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        instance.status = new_status
+        instance.save()
+        
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
 
 class ConsultationMetricsView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
@@ -238,8 +535,14 @@ class ConsultationMetricsView(generics.GenericAPIView):
         
         # Add date range if provided
         if start_date and end_date:
-            client_filter &= Q(date__range=[start_date, end_date])
-            practitioner_filter &= Q(date__range=[start_date, end_date])
+            try:
+                client_filter &= Q(date__range=[start_date, end_date])
+                practitioner_filter &= Q(date__range=[start_date, end_date])
+            except ValueError:
+                return Response(
+                    {'error': 'Invalid date format. Use YYYY-MM-DD'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Client metrics
         client_consultations = Consultation.objects.filter(client_filter)
@@ -263,32 +566,38 @@ class ConsultationMetricsView(generics.GenericAPIView):
             'as_client': {
                 'total_consultations': client_consultations.count(),
                 'completed': completed_client.count(),
-                'pending': client_consultations.filter(status='pending').count(),
+                'pending': client_consultations.filter(status='booked').count(),
                 'cancelled': client_consultations.filter(status='cancelled').count(),
                 'total_spent': float(total_spent),
             },
             'as_practitioner': {
                 'total_consultations': practitioner_consultations.count(),
                 'completed': completed_practitioner.count(),
-                'pending': practitioner_consultations.filter(status='pending').count(),
+                'pending': practitioner_consultations.filter(status='booked').count(),
                 'cancelled': practitioner_consultations.filter(status='cancelled').count(),
                 'total_earned': float(total_earned),
             }
         })
     
+# ==================== REVIEW VIEWS ====================
 
 class ReviewCreateView(generics.CreateAPIView):
     queryset = Review.objects.all()
     serializer_class = ReviewSerializer
-    permission_classes = [IsAuthenticated, IsConsultationClientOrAdmin]
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
 
     def perform_create(self, serializer):
         consultation = serializer.validated_data['consultation']
         if self.request.user != consultation.client and not self.request.user.is_staff:
-            raise PermissionError("You can only review your own consultations.")
+            raise ValidationError("You can only review your own consultations.")
         if Review.objects.filter(consultation=consultation).exists():
             raise ValidationError("This consultation has already been reviewed.")
-        serializer.save(reviwer=self.request.user)
+        serializer.save(reviewer=self.request.user)
 
 class ReviewListView(generics.ListAPIView):
     serializer_class = ReviewSerializer
@@ -300,7 +609,7 @@ class ReviewListView(generics.ListAPIView):
     ]
     
     filterset_fields = {
-        'rating': ['exact', 'gte'],
+        'rating': ['exact', 'gte', 'lte'],
         'created_at': ['gte', 'lte'],
         'consultation__practitioner': ['exact'],
     }
@@ -313,9 +622,9 @@ class ReviewListView(generics.ListAPIView):
         if user.is_staff:
             return Review.objects.all()
         return Review.objects.filter(
-            Q(consultation__client=user)|
+            Q(consultation__client=user) |
             Q(consultation__practitioner__user=user)
-            )
+        ).select_related('consultation', 'reviewer')
 
 class ReviewDetailView(generics.RetrieveAPIView):
     queryset = Review.objects.all()
@@ -328,7 +637,8 @@ class ReviewUpdateDeleteView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated, IsReviewOwnerOrAdmin]
 
 
-# Auth Views
+# ==================== AUTH VIEWS ====================
+
 class LoginView(ObtainAuthToken):
     def post(self, request, *args, **kwargs):
         serializer = self.get_serializer(data=request.data)
@@ -341,7 +651,9 @@ class LoginView(ObtainAuthToken):
                 'token': token.key,
                 'user_id': user.pk,
                 'email': user.email,
-                'username': user.username,
+                'username': user.email,  # Use email as username since username field is None
+                'first_name': user.first_name,
+                'last_name': user.last_name,
                 'is_practitioner': hasattr(user, 'practitioner'),
                 'is_staff': user.is_staff,
             }, status=status.HTTP_200_OK)
@@ -366,7 +678,8 @@ class LogoutView(generics.GenericAPIView):
                 'error': 'Already logged out or token not found'
             }, status=status.HTTP_400_BAD_REQUEST)
 
-# API ROOT VIEW
+# ==================== API ROOT VIEW ====================
+
 @api_view(['GET'])
 def api_root(request, format=None):
     """
@@ -383,6 +696,7 @@ def api_root(request, format=None):
         'authentication': {
             'register': reverse('register', request=request, format=format),
             'login': reverse('login', request=request, format=format),
+            'logout': reverse('logout', request=request, format=format),
             'profile': reverse('current-user-profile', request=request, format=format),
         },
         
@@ -395,6 +709,7 @@ def api_root(request, format=None):
         # Profiles
         'profiles': {
             'my_profile': reverse('my-profile', request=request, format=format),
+            'list': reverse('profile-list', request=request, format=format),
             'create': reverse('profile-create', request=request, format=format),
             'detail': '/profiles/{id}/',
         },
@@ -412,6 +727,7 @@ def api_root(request, format=None):
             'detail': '/practitioners/{id}/',
             'update': '/practitioners/{id}/update/',
             'availability': '/practitioners/{practitioner_id}/availability/',
+            'available_slots': '/practitioners/{practitioner_id}/available-slots/',
         },
         
         # Consultations
@@ -426,10 +742,13 @@ def api_root(request, format=None):
         # Availability
         'availability': {
             'list': reverse('availability-list', request=request, format=format),
+            'create': reverse('availability-list-create', request=request, format=format),
+            'bulk_create': reverse('availability-bulk-create', request=request, format=format),
+            'check_slot': reverse('check-slot-availability', request=request, format=format),
             'detail': '/availability/{id}/',
         },
 
-        # NEW: Metrics Dashboard
+        # Metrics Dashboard
         'metrics': {
             'dashboard': reverse('consultation-metrics', request=request, format=format),
             'description': 'Get consultation statistics and summary metrics',
@@ -444,10 +763,8 @@ def api_root(request, format=None):
             'update': '/reviews/{id}/update/',
         },
     })
-# Debug view to test authentication
-from rest_framework.decorators import api_view, permission_classes
-from rest_framework.response import Response
-from rest_framework import status
+
+# ==================== DEBUG VIEW ====================
 
 @api_view(['GET'])
 @permission_classes([])  # Allow anyone for testing
