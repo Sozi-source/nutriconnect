@@ -252,41 +252,8 @@ class Availability(TimeStampedModel):
             models.Index(fields=['practitioner', 'specific_date']),
             models.Index(fields=['practitioner', 'day_of_week']),
             models.Index(fields=['practitioner', 'is_available']),
-            models.Index(fields=['specific_date', 'is_available']),
-        ]
-        constraints = [
-            # Valid weekly availability
-            models.CheckConstraint(
-                condition=models.Q(
-                    recurrence_type='weekly',
-                    day_of_week__isnull=False,
-                    specific_date__isnull=True
-                ),
-                name='valid_weekly_availability'
-            ),
-            # Valid one-time availability
-            models.CheckConstraint(
-                condition=models.Q(
-                    recurrence_type='one_time',
-                    day_of_week__isnull=True,
-                    specific_date__isnull=False
-                ),
-                name='valid_one_time_availability'
-            ),
-            # Valid unavailable blocks
-            models.CheckConstraint(
-                condition=models.Q(
-                    recurrence_type='unavailable',
-                    specific_date__isnull=False
-                ),
-                name='valid_unavailable_block'
-            ),
-            # End time after start time
-            models.CheckConstraint(
-                condition=models.Q(end_time__gt=models.F('start_time')),
-                name='end_time_after_start_time'
-            ),
-        ]
+            models.Index(fields=['specific_date', 'is_available'])
+      ]
 
     def __str__(self):
         if self.recurrence_type == 'weekly':
