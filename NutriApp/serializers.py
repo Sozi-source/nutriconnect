@@ -164,14 +164,15 @@ class PractitionerSerializer(serializers.ModelSerializer):
     specialties = SpecialtySerializer(many=True, read_only=True)
     full_name = serializers.SerializerMethodField()
     availability_count = serializers.SerializerMethodField()
+    profile_status = serializers.SerializerMethodField()  # Add this
 
     class Meta:
         model = Practitioner
         fields = [
             'id', 'user', 'first_name', 'last_name', 'full_name', 'email', 
             'bio', 'currency', 'hourly_rate', 'city', 'years_of_experience',
-            'is_verified', 'profile_complete', 'specialties', 'availability_count',
-            'created_at', 'updated_at'
+            'is_verified', 'profile_complete', 'profile_status', 'specialties', 
+            'availability_count', 'created_at', 'updated_at'
         ]
         read_only_fields = ['created_at', 'updated_at', 'is_verified']
 
@@ -180,6 +181,29 @@ class PractitionerSerializer(serializers.ModelSerializer):
     
     def get_availability_count(self, obj):
         return obj.availabilities.filter(is_available=True).count()
+    
+    def get_profile_status(self, obj):
+        """Return profile completion status with missing fields"""
+        if obj.profile_complete:
+            return {"status": "complete", "message": "Profile complete"}
+        
+        missing = []
+        if not obj.bio:
+            missing.append("bio")
+        if not obj.city:
+            missing.append("city")
+        if not obj.hourly_rate or obj.hourly_rate == 0:
+            missing.append("hourly_rate")
+        if obj.years_of_experience == 0:
+            missing.append("experience")
+        if obj.specialties.count() == 0:
+            missing.append("specialties")
+        
+        return {
+            "status": "incomplete",
+            "missing_fields": missing,
+            "message": f"Missing: {', '.join(missing)}"
+        }
 
 
 class PractitionerDetailSerializer(PractitionerSerializer):
