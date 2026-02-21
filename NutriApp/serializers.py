@@ -106,20 +106,6 @@ class UserSerializer(serializers.ModelSerializer):
             role=role,
             phone=phone
         )
-
-        # If practitioner → create full practitioner profile
-        if role == 'practitioner':
-            Practitioner.objects.create(
-                user=user,
-                bio=bio,
-                city=city,
-                hourly_rate=hourly_rate,
-                currency='KES',
-                years_of_experience=years_of_experience,
-                is_verified=False,        # Admin should verify
-                profile_complete=True
-            )
-
         return user
 
 
