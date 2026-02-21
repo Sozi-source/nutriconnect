@@ -220,8 +220,11 @@ class ConsultationSerializer(serializers.ModelSerializer):
         if not all([practitioner_id, booking_date, booking_time]):
             return data
         
-        # Get the practitioner object from the ID
-        from .models import Practitioner
+        # Get the practitioner object for validation
+        from .models import Practitioner, Availability, Consultation
+        from django.utils import timezone
+        from datetime import datetime
+        
         try:
             practitioner = Practitioner.objects.get(id=practitioner_id)
         except Practitioner.DoesNotExist:
@@ -247,16 +250,13 @@ class ConsultationSerializer(serializers.ModelSerializer):
         ).exists():
             raise serializers.ValidationError("Practitioner is unavailable on this date")
         
-        # Check availability using the practitioner's method
+        # Check availability
         if not practitioner.is_available_at(booking_date, booking_time):
             raise serializers.ValidationError(
                 "Practitioner is not available at this time. Please check their availability calendar."
             )
         
         # Check if booking is in the past
-        from django.utils import timezone
-        from datetime import datetime
-        
         booking_datetime = datetime.combine(booking_date, booking_time)
         if timezone.is_naive(booking_datetime):
             booking_datetime = timezone.make_aware(booking_datetime)
@@ -264,8 +264,6 @@ class ConsultationSerializer(serializers.ModelSerializer):
         if booking_datetime < timezone.now():
             raise serializers.ValidationError("Cannot book appointments in the past")
         
-        # Replace the ID with the actual practitioner object for the serializer to save
-        data['practitioner'] = practitioner
         return data
 
 class ConsultationCreateSerializer(serializers.ModelSerializer):
