@@ -1,13 +1,14 @@
 from django.shortcuts import render
-from rest_framework import generics, permissions
-from rest_framework.decorators import api_view, permission_classes 
+from rest_framework import generics, permissions, viewsets
+from rest_framework.decorators import api_view, permission_classes, action
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser, AllowAny
-from .models import User, UserProfile, Specialty, Practitioner, Review, Availability, Consultation
+from .models import User, UserProfile, Specialty, Practitioner, Review, Availability, Consultation, PractitionerApplication
 from .serializers import (
     UserSerializer, ReviewSerializer, UserProfileSerializer, SpecialtySerializer, 
     ConsultationSerializer, PractitionerSerializer, AvailabilitySerializer,
     PractitionerDetailSerializer, BulkAvailabilitySerializer, TimeSlotSerializer,
-    ConsultationCreateSerializer
+    ConsultationCreateSerializer, PractitionerApplicationSerializer,
+    AdminApplicationReviewSerializer
 )
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly, IsAdminUser, AllowAny
 from .permissions import IsOwnerOrAdmin, IsConsultationClientOrAdmin, IsRelatedUserOwnerOrAdmin, IsAvailabilityOwnerOrAdmin, IsReviewOwnerOrAdmin, IsConsultationParticipantOrAdmin
@@ -26,6 +27,10 @@ from django.utils import timezone
 from rest_framework.views import APIView
 from django.shortcuts import get_object_or_404
 from rest_framework import permissions
+from django.db import transaction
+import logging
+
+logger = logging.getLogger(__name__)
 
 # Create your views here.
 
@@ -40,6 +45,133 @@ def health_check(request):
         'message': 'NutriConnect API is running',
         'version': '1.0'
     })
+
+# ==================== PRACTITIONER APPLICATION VIEWS (NEW) ====================
+
+class PractitionerApplicationView(generics.CreateAPIView):
+    """Submit application to become a practitioner"""
+    serializer_class = PractitionerApplicationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_serializer_context(self):
+        context = super().get_serializer_context()
+        context['request'] = self.request
+        return context
+
+
+class MyApplicationView(generics.RetrieveAPIView):
+    """Get current user's application status"""
+    serializer_class = PractitionerApplicationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_object(self):
+        try:
+            return PractitionerApplication.objects.get(user=self.request.user)
+        except PractitionerApplication.DoesNotExist:
+            return None
+
+    def get(self, request, *args, **kwargs):
+        application = self.get_object()
+        if application:
+            serializer = self.get_serializer(application)
+            return Response(serializer.data)
+        return Response({"status": "no_application"}, status=status.HTTP_404_NOT_FOUND)
+
+
+class AdminApplicationViewSet(viewsets.ModelViewSet):
+    """Admin views for managing practitioner applications"""
+    queryset = PractitionerApplication.objects.all().order_by('-created_at')
+    serializer_class = AdminApplicationReviewSerializer
+    permission_classes = [IsAdminUser]
+
+    @action(detail=True, methods=['post'])
+    def approve(self, request, pk=None):
+        """Approve application and create practitioner profile"""
+        application = self.get_object()
+        
+        if application.status != 'pending':
+            return Response(
+                {"error": f"Application is already {application.status}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            with transaction.atomic():
+                # 1. Update user profile role
+                profile = application.user.profile
+                profile.role = 'practitioner'
+                profile.save()
+                
+                # 2. Create practitioner profile
+                practitioner = Practitioner.objects.create(
+                    user=application.user,
+                    bio=application.bio,
+                    city=application.city,
+                    hourly_rate=application.hourly_rate,
+                    years_of_experience=application.years_of_experience,
+                    currency='KES',
+                    is_verified=True,  # Auto-verified on approval
+                    profile_complete=True
+                )
+                
+                # 3. Add specialties
+                practitioner.specialties.set(application.specialties.all())
+                
+                # 4. Update application status
+                application.status = 'approved'
+                application.reviewed_at = timezone.now()
+                application.reviewed_by = request.user
+                application.save()
+                
+                logger.info(f"✅ Approved practitioner application for {application.user.email}")
+                
+                # TODO: Send approval email
+                
+                return Response({
+                    "message": "Application approved successfully",
+                    "practitioner_id": practitioner.id
+                })
+                
+        except Exception as e:
+            logger.error(f"❌ Error approving application: {str(e)}")
+            return Response(
+                {"error": f"Failed to approve application: {str(e)}"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+    @action(detail=True, methods=['post'])
+    def reject(self, request, pk=None):
+        """Reject application with notes"""
+        application = self.get_object()
+        
+        application.status = 'rejected'
+        application.admin_notes = request.data.get('admin_notes', '')
+        application.reviewed_at = timezone.now()
+        application.reviewed_by = request.user
+        application.save()
+        
+        logger.info(f"❌ Rejected practitioner application for {application.user.email}")
+        
+        # TODO: Send rejection email
+        
+        return Response({"message": "Application rejected"})
+
+    @action(detail=True, methods=['post'])
+    def request_more_info(self, request, pk=None):
+        """Request more information from applicant"""
+        application = self.get_object()
+        
+        application.status = 'more_info'
+        application.admin_notes = request.data.get('admin_notes', '')
+        application.reviewed_at = timezone.now()
+        application.reviewed_by = request.user
+        application.save()
+        
+        logger.info(f"📝 Requested more info for {application.user.email}")
+        
+        return Response({"message": "More information requested"})
+
+# ==================== USER VIEWS ====================
 
 class RegisterUserView(generics.CreateAPIView):
     queryset = User.objects.all()
@@ -648,15 +780,24 @@ class LoginView(ObtainAuthToken):
             user = serializer.validated_data['user']
             token, created = Token.objects.get_or_create(user=user)
             
+            # Check if user has pending application
+            application_status = None
+            try:
+                application = PractitionerApplication.objects.get(user=user)
+                application_status = application.status
+            except PractitionerApplication.DoesNotExist:
+                pass
+            
             return Response({
                 'token': token.key,
                 'user_id': user.pk,
                 'email': user.email,
-                'username': user.email,  # Use email as username since username field is None
+                'username': user.email,
                 'first_name': user.first_name,
                 'last_name': user.last_name,
                 'is_practitioner': hasattr(user, 'practitioner'),
                 'is_staff': user.is_staff,
+                'application_status': application_status,  # NEW: Show application status
             }, status=status.HTTP_200_OK)
         except Exception as e:
             return Response({
@@ -699,6 +840,13 @@ def api_root(request, format=None):
             'login': reverse('login', request=request, format=format),
             'logout': reverse('logout', request=request, format=format),
             'profile': reverse('current-user-profile', request=request, format=format),
+        },
+        
+        # Practitioner Applications (NEW)
+        'applications': {
+            'apply': reverse('practitioner-apply', request=request, format=format),
+            'my_application': reverse('my-application', request=request, format=format),
+            'admin_review': '/applications/admin/',
         },
         
         # Users
@@ -793,6 +941,7 @@ def debug_auth(request):
                 'email': token_obj.user.email,
                 'first_name': token_obj.user.first_name,
                 'last_name': token_obj.user.last_name,
+                'has_application': hasattr(token_obj.user, 'practitioner_application'),
             }
         except Token.DoesNotExist:
             token_valid = False

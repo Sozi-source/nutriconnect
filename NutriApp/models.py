@@ -97,6 +97,58 @@ class Specialty(models.Model):
     def __str__(self):
         return self.name
 
+# Practitioner Application Model (NEW)
+class PractitionerApplication(TimeStampedModel):
+    """Application for users who want to become practitioners"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+        ('more_info', 'More Info Needed'),
+    ]
+    
+    # Link to existing user (who is currently a client)
+    user = models.OneToOneField(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='practitioner_application'
+    )
+    
+    # Professional Information
+    bio = models.TextField()
+    city = models.CharField(max_length=100)
+    hourly_rate = models.DecimalField(
+        max_digits=10, 
+        decimal_places=2,
+        validators=[MinValueValidator(0)]
+    )
+    years_of_experience = models.PositiveIntegerField()
+    qualifications = models.TextField(help_text="Degrees, certifications, etc.")
+    license_number = models.CharField(max_length=100)
+    specialties = models.ManyToManyField(Specialty, blank=True)
+    
+    # Application Status
+    status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default='pending'
+    )
+    admin_notes = models.TextField(blank=True, help_text="Internal admin notes")
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        User, 
+        null=True, 
+        blank=True, 
+        on_delete=models.SET_NULL,
+        related_name='reviewed_applications'
+    )
+    
+    class Meta:
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"{self.user.get_full_name()} - {self.status}"
+
 # Practitioner Model
 class Practitioner(TimeStampedModel):
     CURRENCY_CHOICES = [
@@ -114,11 +166,11 @@ class Practitioner(TimeStampedModel):
         null=True,
         blank=True
     )
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='practitioner', blank=True)
-    specialties = models.ManyToManyField(Specialty, related_name='practitioner')
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='practitioner')
+    specialties = models.ManyToManyField(Specialty, related_name='practitioner', blank=True)
     bio = models.TextField(blank=True, null=True)
     city = models.CharField(max_length=100, db_index=True, blank=True, default='')
-    years_of_experience = models.PositiveIntegerField(default=0)
+    years_of_experience = models.PositiveIntegerField(default=0, blank=True)
     is_verified = models.BooleanField(default=False, db_index=True)
     profile_complete = models.BooleanField(default=False)
 
@@ -135,13 +187,6 @@ class Practitioner(TimeStampedModel):
     def is_available_at(self, date, time):
         """
         Check if practitioner is available at a specific date and time.
-        
-        Args:
-            date: date object
-            time: time object
-            
-        Returns:
-            bool: True if available, False otherwise
         """
         day_of_week = date.weekday()
         
@@ -185,7 +230,7 @@ class Practitioner(TimeStampedModel):
         return self.consultations.filter(
             date__gte=timezone.now().date(),
             date__lte=end_date,
-            status__in=[Consultation.Status.BOOKED, Consultation.Status.COMPLETED]
+            status__in=['booked', 'completed']
         ).order_by('date', 'time')
 
 # Availability Model
@@ -256,7 +301,7 @@ class Availability(TimeStampedModel):
             models.Index(fields=['practitioner', 'day_of_week']),
             models.Index(fields=['practitioner', 'is_available']),
             models.Index(fields=['specific_date', 'is_available'])
-      ]
+        ]
 
     def __str__(self):
         if self.recurrence_type == 'weekly':
@@ -280,7 +325,7 @@ class Availability(TimeStampedModel):
         if self.start_time >= self.end_time:
             raise ValidationError('End time must be after start time')
         
-        # Validate time slots are in 30-minute increments (optional business rule)
+        # Validate time slots are in 30-minute increments
         if self.start_time.minute % 30 != 0 or self.end_time.minute % 30 != 0:
             raise ValidationError('Time slots must be in 30-minute increments')
         

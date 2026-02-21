@@ -37,6 +37,13 @@ consultation_patterns = [
     ])),
 ]
 
+# Application nested URLs (for admin actions)
+application_admin_patterns = [
+    path('<int:pk>/approve/', views.AdminApplicationViewSet.as_view({'post': 'approve'}), name='application-approve'),
+    path('<int:pk>/reject/', views.AdminApplicationViewSet.as_view({'post': 'reject'}), name='application-reject'),
+    path('<int:pk>/request-info/', views.AdminApplicationViewSet.as_view({'post': 'request_more_info'}), name='application-request-info'),
+]
+
 # Main URL patterns
 urlpatterns = [
     # Public health check 
@@ -59,6 +66,27 @@ urlpatterns = [
     path('profiles/create/', views.UserProfileCreateView.as_view(), name='profile-create'),
     path('profiles/<int:pk>/', views.UserProfileDetailView.as_view(), name='profile-detail'),
     path('profiles/<int:pk>/update/', views.UserProfileUpdateView.as_view(), name='profile-update'),
+    
+    # ==================== NEW PRACTITIONER APPLICATION URLS ====================
+    # Public application endpoints (for authenticated users)
+    path('applications/apply/', views.PractitionerApplicationView.as_view(), name='practitioner-apply'),
+    path('applications/my-application/', views.MyApplicationView.as_view(), name='my-application'),
+    
+    # Admin application management
+    path('applications/admin/', views.AdminApplicationViewSet.as_view({
+        'get': 'list',
+        'post': 'create',
+    }), name='application-list'),
+    path('applications/admin/<int:pk>/', views.AdminApplicationViewSet.as_view({
+        'get': 'retrieve',
+        'put': 'update',
+        'patch': 'partial_update',
+        'delete': 'destroy',
+    }), name='application-detail'),
+    
+    # Admin actions on applications
+    path('applications/admin/', include(application_admin_patterns)),
+    # ========================================================================
     
     # Specialties
     path('specialties/', views.SpecialtyListView.as_view(), name='specialty-list'),

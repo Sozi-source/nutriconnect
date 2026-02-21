@@ -1,7 +1,8 @@
 from rest_framework import serializers
-from .models import User, UserProfile, Specialty, Consultation, Availability, Review, Practitioner
-from django.core.exceptions import ValidationError
-from datetime import datetime
+from .models import (
+    User, UserProfile, Specialty, PractitionerApplication,
+    Practitioner, Availability, Consultation, Review
+)
 from django.db import transaction
 import logging
 
@@ -15,20 +16,18 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = ['id', 'role', 'phone']
 
 
-# ==================== USER REGISTRATION & UPDATE ====================
+# ==================== USER REGISTRATION ====================
 
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, min_length=8)
     profile = UserProfileSerializer(read_only=True)
 
-    # Core fields
     role = serializers.ChoiceField(
         choices=['client', 'practitioner'],
         write_only=True,
         required=False,
         default='client'
     )
-
     phone = serializers.CharField(
         write_only=True,
         required=False,
@@ -36,73 +35,22 @@ class UserSerializer(serializers.ModelSerializer):
         default=''
     )
 
-    # Practitioner-only fields (optional unless role=practitioner)
-    bio = serializers.CharField(write_only=True, required=False, allow_blank=True, default='')
-    city = serializers.CharField(write_only=True, required=False, allow_blank=True, default='')
-    hourly_rate = serializers.DecimalField(
-        max_digits=10,
-        decimal_places=2,
-        write_only=True,
-        required=False,
-        default=0.00
-    )
-    years_of_experience = serializers.IntegerField(
-        write_only=True,
-        required=False,
-        default=0
-    )
-
     class Meta:
         model = User
         fields = [
-            'id',
-            'first_name',
-            'last_name',
-            'email',
-            'password',
-            'profile',
-            'role',
-            'phone',
-            # Practitioner extra fields
-            'bio',
-            'city',
-            'hourly_rate',
-            'years_of_experience'
+            'id', 'first_name', 'last_name', 'email', 'password',
+            'profile', 'role', 'phone'
         ]
-
-    def validate(self, data):
-        """
-        Ensure practitioner fields are provided if role is practitioner
-        """
-        role = data.get('role', 'client')
-
-        if role == 'practitioner':
-            required_fields = ['bio', 'city', 'hourly_rate', 'years_of_experience']
-            missing = [field for field in required_fields if not data.get(field)]
-
-            if missing:
-                raise serializers.ValidationError({
-                    field: f"{field} is required for practitioner registration"
-                    for field in missing
-                })
-
-        return data
 
     def create(self, validated_data):
         role = validated_data.pop('role', 'client')
         phone = validated_data.pop('phone', '')
 
-        # Extract practitioner fields safely
-        bio = validated_data.pop('bio', '')
-        city = validated_data.pop('city', '')
-        hourly_rate = validated_data.pop('hourly_rate', 0.00)
-        years_of_experience = validated_data.pop('years_of_experience', 0)
-
         try:
             with transaction.atomic():
                 # Create user
                 user = User.objects.create_user(**validated_data)
-                logger.info(f"✅ User created: {user.id} - {user.email}")
+                logger.info(f"✅ User created: {user.email}")
 
                 # Create profile
                 UserProfile.objects.create(
@@ -110,160 +58,93 @@ class UserSerializer(serializers.ModelSerializer):
                     role=role,
                     phone=phone
                 )
-                logger.info(f"✅ Profile created for user: {user.id} with role: {role}")
-
-                # Auto-create practitioner if role is practitioner
-                if role == 'practitioner':
-                    practitioner = Practitioner.objects.create(
-                        user=user,
-                        bio=bio,
-                        city=city,
-                        hourly_rate=hourly_rate,
-                        years_of_experience=years_of_experience,
-                        currency='KES',  # Default currency
-                        is_verified=False,
-                        profile_complete=False
-                    )
-                    logger.info(f"✅ Practitioner profile auto-created for user: {user.id}")
+                logger.info(f"✅ Profile created with role: {role}")
 
                 return user
 
         except Exception as e:
-            logger.error(f"❌ Registration failed: {str(e)}", exc_info=True)
-            raise serializers.ValidationError({
-                'error': 'Registration failed',
-                'details': str(e)
-            })
-
-    def update(self, instance, validated_data):
-        """
-        Handle user updates, including role changes from client to practitioner
-        """
-        role = validated_data.pop('role', None)
-        phone = validated_data.pop('phone', None)
-        
-        # Extract practitioner fields
-        bio = validated_data.pop('bio', None)
-        city = validated_data.pop('city', None)
-        hourly_rate = validated_data.pop('hourly_rate', None)
-        years_of_experience = validated_data.pop('years_of_experience', None)
-
-        try:
-            with transaction.atomic():
-                # Update user fields
-                for attr, value in validated_data.items():
-                    setattr(instance, attr, value)
-                instance.save()
-
-                # Update or create profile
-                profile, created = UserProfile.objects.get_or_create(user=instance)
-                if role is not None:
-                    old_role = profile.role
-                    profile.role = role
-                    profile.save()
-
-                    # If role changed to practitioner, create practitioner profile
-                    if old_role != 'practitioner' and role == 'practitioner':
-                        try:
-                            # Check if practitioner already exists
-                            if not hasattr(instance, 'practitioner'):
-                                Practitioner.objects.create(
-                                    user=instance,
-                                    bio=bio or '',
-                                    city=city or '',
-                                    hourly_rate=hourly_rate or 0.00,
-                                    years_of_experience=years_of_experience or 0,
-                                    currency='KES',
-                                    is_verified=False,
-                                    profile_complete=False
-                                )
-                                logger.info(f"✅ Practitioner profile created for {instance.email} after role change")
-                            else:
-                                # Update existing practitioner
-                                practitioner = instance.practitioner
-                                if bio is not None:
-                                    practitioner.bio = bio
-                                if city is not None:
-                                    practitioner.city = city
-                                if hourly_rate is not None:
-                                    practitioner.hourly_rate = hourly_rate
-                                if years_of_experience is not None:
-                                    practitioner.years_of_experience = years_of_experience
-                                practitioner.save()
-                                logger.info(f"✅ Practitioner profile updated for {instance.email}")
-                        except Exception as e:
-                            logger.error(f"❌ Error handling practitioner profile: {e}")
-                            raise
-
-                # Update phone in profile
-                if phone is not None:
-                    profile.phone = phone
-                    profile.save()
-
-                return instance
-
-        except Exception as e:
-            logger.error(f"❌ Update failed: {str(e)}", exc_info=True)
-            raise serializers.ValidationError({
-                'error': 'Update failed',
-                'details': str(e)
-            })
+            logger.error(f"❌ Registration failed: {str(e)}")
+            raise serializers.ValidationError({"error": f"Registration failed: {str(e)}"})
 
 
-# ==================== PRACTITIONER PROFILE UPDATE SERIALIZER ====================
+# ==================== PRACTITIONER APPLICATION ====================
 
-class PractitionerUpdateSerializer(serializers.ModelSerializer):
-    """Separate serializer for practitioners to update their professional details"""
-    first_name = serializers.CharField(source='user.first_name', required=False)
-    last_name = serializers.CharField(source='user.last_name', required=False)
-    email = serializers.EmailField(source='user.email', read_only=True)
-    phone = serializers.CharField(source='user.profile.phone', required=False)
-
+class PractitionerApplicationSerializer(serializers.ModelSerializer):
+    """Serializer for users to apply to become practitioners"""
+    
     class Meta:
-        model = Practitioner
+        model = PractitionerApplication
         fields = [
-            'id',
-            'first_name',
-            'last_name',
-            'email',
-            'phone',
-            'bio',
-            'city',
-            'hourly_rate',
-            'currency',
-            'years_of_experience',
-            'specialties',
-            'profile_complete'
+            'id', 'bio', 'city', 'hourly_rate', 'years_of_experience',
+            'qualifications', 'license_number', 'specialties', 'status',
+            'created_at', 'admin_notes'
         ]
+        read_only_fields = ['id', 'status', 'created_at', 'admin_notes']
 
-    def update(self, instance, validated_data):
-        # Handle nested user data
-        user_data = validated_data.pop('user', {})
-        profile_data = user_data.pop('profile', {})
-
-        # Update user first_name/last_name if provided
-        if user_data:
-            user = instance.user
-            for attr, value in user_data.items():
-                setattr(user, attr, value)
-            user.save()
-
-        # Update profile phone if provided
-        if profile_data.get('phone'):
-            profile = instance.user.profile
-            profile.phone = profile_data['phone']
-            profile.save()
-
-        # Update practitioner fields
-        for attr, value in validated_data.items():
-            setattr(instance, attr, value)
+    def validate(self, data):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("You must be logged in to apply")
         
-        # Mark profile as complete if all required fields are filled
-        if instance.bio and instance.city and instance.hourly_rate and instance.years_of_experience:
-            instance.profile_complete = True
+        # Check if user already has an application
+        if PractitionerApplication.objects.filter(
+            user=request.user, 
+            status__in=['pending', 'more_info']
+        ).exists():
+            raise serializers.ValidationError(
+                "You already have a pending application. Please wait for review."
+            )
         
-        instance.save()
-        return instance
+        # Check if user is already a practitioner
+        if hasattr(request.user, 'practitioner'):
+            raise serializers.ValidationError("You are already a practitioner")
+        
+        return data
+
+    def create(self, validated_data):
+        request = self.context.get('request')
+        specialties = validated_data.pop('specialties', [])
+        
+        application = PractitionerApplication.objects.create(
+            user=request.user,
+            **validated_data
+        )
+        
+        if specialties:
+            application.specialties.set(specialties)
+        
+        return application
+
+
+# ==================== ADMIN APPROVAL SERIALIZER ====================
+
+class AdminApplicationReviewSerializer(serializers.ModelSerializer):
+    """Serializer for admin to review and approve applications"""
+    user_email = serializers.EmailField(source='user.email', read_only=True)
+    user_name = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PractitionerApplication
+        fields = [
+            'id', 'user_email', 'user_name', 'bio', 'city', 'hourly_rate',
+            'years_of_experience', 'qualifications', 'license_number',
+            'specialties', 'status', 'admin_notes', 'created_at'
+        ]
+        read_only_fields = [
+            'id', 'user_email', 'user_name', 'bio', 'city', 'hourly_rate',
+            'years_of_experience', 'qualifications', 'license_number',
+            'specialties', 'created_at'
+        ]
+    
+    def get_user_name(self, obj):
+        return obj.user.get_full_name()
+    
+    def validate(self, data):
+        if 'status' in data and data['status'] == 'approved':
+            # Check if user already has practitioner profile
+            if hasattr(data.get('user', self.instance.user), 'practitioner'):
+                raise serializers.ValidationError("User already has a practitioner profile")
+        return data
 
 
 # ==================== SPECIALTY SERIALIZER ====================
@@ -309,7 +190,6 @@ class PractitionerDetailSerializer(PractitionerSerializer):
         fields = PractitionerSerializer.Meta.fields + ['availabilities']
     
     def get_availabilities(self, obj):
-        from .serializers import AvailabilitySerializer
         availabilities = obj.availabilities.filter(is_available=True)
         return AvailabilitySerializer(availabilities, many=True).data
 
@@ -333,7 +213,6 @@ class AvailabilitySerializer(serializers.ModelSerializer):
         read_only_fields = ['created_at', 'updated_at']
 
     def validate(self, data):
-        """Additional validation for availability slots"""
         practitioner = data.get('practitioner')
         
         if practitioner and not practitioner.is_verified:
@@ -365,7 +244,6 @@ class BulkAvailabilitySerializer(serializers.Serializer):
         return data
     
     def create(self, validated_data):
-        from .models import Practitioner
         practitioner = Practitioner.objects.get(id=validated_data['practitioner_id'])
         created_slots = []
         
@@ -427,10 +305,6 @@ class ConsultationSerializer(serializers.ModelSerializer):
     
     def get_formatted_time(self, obj):
         return obj.time.strftime('%I:%M %p')
-    
-    def validate(self, data):
-        # This is for READ operations only
-        return data
 
 
 class ConsultationCreateSerializer(serializers.ModelSerializer):
@@ -452,7 +326,6 @@ class ConsultationCreateSerializer(serializers.ModelSerializer):
         if not all([practitioner, booking_date, booking_time]):
             return data
 
-        from .models import Availability, Consultation
         from django.utils import timezone
         from datetime import datetime
 
@@ -552,6 +425,3 @@ class MetricsResponseSerializer(serializers.Serializer):
     """Serializer for dashboard metrics"""
     as_client = serializers.DictField()
     as_practitioner = serializers.DictField()
-    
-    class Meta:
-        fields = ['as_client', 'as_practitioner']
