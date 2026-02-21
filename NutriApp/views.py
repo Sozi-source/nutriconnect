@@ -266,7 +266,7 @@ class SpecialtyDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes =[IsAuthenticated, IsAdminUser]
 
 class PractitionerListView(generics.ListAPIView):
-    queryset = Practitioner.objects.filter(is_verified=True)
+    queryset = Practitioner.objects.filter(is_verified=True)  # Show ALL verified practitioners
     serializer_class = PractitionerSerializer
     permission_classes = [IsAuthenticated]
     filterset_class = PractitionerFilter
@@ -289,8 +289,9 @@ class PractitionerListView(generics.ListAPIView):
         'hourly_rate',
         'years_of_experience',
         'user__first_name',
+        'profile_complete',  
     ]
-    ordering = ['user__first_name'] #default
+    ordering = ['-profile_complete', 'user__first_name']  
 
 
 class PractitionerDetailView(generics.RetrieveAPIView):
