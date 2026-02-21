@@ -1,6 +1,13 @@
 from django.urls import path, include
 from . import views
 
+# Practitioner nested URLs
+practitioner_patterns = [
+    path('', views.PractitionerListView.as_view(), name='practitioner-list'),
+    path('<int:pk>/', views.PractitionerDetailView.as_view(), name='practitioner-detail'),
+    path('me/', views.MyPractitionerProfileView.as_view(), name='practitioner-me'),
+]
+
 urlpatterns = [
     # Public
     path('health/', views.health_check, name='health-check'),
@@ -15,11 +22,9 @@ urlpatterns = [
     path('specialties/', views.SpecialtyListView.as_view(), name='specialty-list'),
     
     # Practitioners (public - only verified)
-    path('practitioners/', views.PractitionerListView.as_view(), name='practitioner-list'),
-    path('practitioners/<int:pk>/', views.PractitionerDetailView.as_view(), name='practitioner-detail'),
-    path('practitioners/me/', views.MyPractitionerProfileView.as_view(), name='my-practitioner'),
+    path('practitioners/', include(practitioner_patterns)),
     
-    # Admin
+    # ========== NEW ADMIN URLS ==========
     path('admin/practitioners/pending/', views.AdminPendingPractitionersView.as_view(), name='admin-pending'),
     path('admin/practitioners/<int:pk>/approve/', views.AdminApprovePractitionerView.as_view(), name='admin-approve'),
     

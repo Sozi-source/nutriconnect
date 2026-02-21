@@ -3,13 +3,19 @@ from rest_framework.response import Response
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from django.shortcuts import get_object_or_404
+from django.db.models import Q
 from .models import User, Practitioner, Specialty, Availability, Consultation, Review
 from .serializers import (
     RegisterSerializer, UserSerializer, PractitionerSerializer,
     SpecialtySerializer, AvailabilitySerializer, ConsultationSerializer,
     ReviewSerializer
 )
-from . import models
+from .permissions import (
+    IsClientUser, IsPractitionerUser, IsOwnerOrAdmin,
+    IsClientOrAdmin, IsPractitionerOrAdmin, CanManageOwnAvailability,
+    CanManageOwnConsultations, PreventSelfBooking
+)
+
 # ==================== PUBLIC VIEWS ====================
 
 @api_view(['GET'])
@@ -64,22 +70,33 @@ class CurrentUserView(generics.RetrieveAPIView):
 # ==================== PRACTITIONER VIEWS ====================
 
 class PractitionerListView(generics.ListAPIView):
-    """Public list of verified practitioners"""
+    """
+    List all verified practitioners.
+    Accessible by: Clients and Admins only
+    Practitioners cannot view the list (to prevent self-booking)
+    """
     serializer_class = PractitionerSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsClientOrAdmin]
     
     def get_queryset(self):
         return Practitioner.objects.filter(is_verified=True)
 
 class PractitionerDetailView(generics.RetrieveAPIView):
-    queryset = Practitioner.objects.all()
+    """
+    View single practitioner details.
+    Accessible by: Clients and Admins only
+    """
+    queryset = Practitioner.objects.filter(is_verified=True)
     serializer_class = PractitionerSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsClientOrAdmin]
 
 class MyPractitionerProfileView(generics.RetrieveAPIView):
-    """Get current user's practitioner profile"""
+    """
+    Get current user's practitioner profile.
+    Accessible by: Practitioners only
+    """
     serializer_class = PractitionerSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPractitionerOrAdmin]
     
     def get_object(self):
         return get_object_or_404(Practitioner, user=self.request.user)
@@ -109,6 +126,10 @@ class AdminApprovePractitionerView(generics.UpdateAPIView):
 # ==================== SPECIALTY VIEWS ====================
 
 class SpecialtyListView(generics.ListAPIView):
+    """
+    List all specialties.
+    Accessible by: All authenticated users
+    """
     queryset = Specialty.objects.all()
     serializer_class = SpecialtySerializer
     permission_classes = [IsAuthenticated]
@@ -116,27 +137,75 @@ class SpecialtyListView(generics.ListAPIView):
 # ==================== AVAILABILITY VIEWS ====================
 
 class AvailabilityListCreateView(generics.ListCreateAPIView):
+    """
+    List and create availability slots.
+    Practitioners can only see/create their own.
+    Clients cannot access.
+    """
     serializer_class = AvailabilitySerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsPractitionerOrAdmin]
     
     def get_queryset(self):
+        if self.request.user.is_staff:
+            return Availability.objects.all()
         return Availability.objects.filter(practitioner__user=self.request.user)
     
     def perform_create(self, serializer):
         practitioner = get_object_or_404(Practitioner, user=self.request.user)
         serializer.save(practitioner=practitioner)
 
+class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update or delete an availability slot.
+    Practitioners can only manage their own.
+    """
+    serializer_class = AvailabilitySerializer
+    permission_classes = [IsAuthenticated, IsPractitionerOrAdmin, CanManageOwnAvailability]
+    
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return Availability.objects.all()
+        return Availability.objects.filter(practitioner__user=self.request.user)
+
 # ==================== CONSULTATION VIEWS ====================
 
 class ConsultationListCreateView(generics.ListCreateAPIView):
+    """
+    List and create consultations.
+    - Clients see their own consultations
+    - Practitioners see their own consultations
+    - Admins see all
+    - Prevents practitioners from booking themselves
+    """
     serializer_class = ConsultationSerializer
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, PreventSelfBooking]
     
     def get_queryset(self):
         user = self.request.user
+        if user.is_staff:
+            return Consultation.objects.all()
         return Consultation.objects.filter(
-            models.Q(client=user) | models.Q(practitioner__user=user)
+            Q(client=user) | Q(practitioner__user=user)
         )
     
     def perform_create(self, serializer):
+        # Check if practitioner is trying to book themselves
+        practitioner = serializer.validated_data.get('practitioner')
+        if practitioner.user == self.request.user:
+            raise PermissionError("Practitioners cannot book themselves")
         serializer.save(client=self.request.user)
+
+class ConsultationDetailView(generics.RetrieveUpdateDestroyAPIView):
+    """
+    Retrieve, update or delete a consultation.
+    Users can only access their own consultations.
+    """
+    serializer_class = ConsultationSerializer
+    permission_classes = [IsAuthenticated, CanManageOwnConsultations]
+    
+    def get_queryset(self):
+        if self.request.user.is_staff:
+            return Consultation.objects.all()
+        return Consultation.objects.filter(
+            Q(client=self.request.user) | Q(practitioner__user=self.request.user)
+        )

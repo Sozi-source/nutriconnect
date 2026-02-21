@@ -1,10 +1,9 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.contrib import messages
-from django.utils import timezone
 from django.db import transaction
 from .models import (
-    User, UserProfile, Practitioner, Specialty, PractitionerApplication,
+    User, UserProfile, Practitioner, Specialty,
     Availability, Consultation, Review
 )
 
@@ -12,17 +11,20 @@ from .models import (
 
 @admin.action(description="✅ Approve selected practitioners")
 def approve_practitioners(modeladmin, request, queryset):
-    approved_count = 0
-    
-    for practitioner in queryset.filter(is_verified=False):
-        practitioner.is_verified = True
-        practitioner.save()
-        approved_count += 1
-    
+    approved = queryset.update(is_verified=True)
     modeladmin.message_user(
         request,
-        f"✅ Approved {approved_count} practitioners.",
+        f"✅ Approved {approved} practitioners.",
         level=messages.SUCCESS
+    )
+
+@admin.action(description="❌ Reject selected practitioners")
+def reject_practitioners(modeladmin, request, queryset):
+    rejected = queryset.update(is_verified=False)
+    modeladmin.message_user(
+        request,
+        f"❌ Rejected {rejected} practitioners.",
+        level=messages.WARNING
     )
 
 # ==================== USER ADMIN ====================
@@ -60,7 +62,7 @@ class PractitionerAdmin(admin.ModelAdmin):
     search_fields = ['user__email', 'user__first_name', 'user__last_name', 'city']
     filter_horizontal = ['specialties']
     readonly_fields = ['created_at', 'updated_at']
-    actions = [approve_practitioners]
+    actions = [approve_practitioners, reject_practitioners]
 
     fieldsets = (
         ('User Information', {
@@ -97,8 +99,7 @@ class SpecialtyAdmin(admin.ModelAdmin):
     search_fields = ['name']
 
     def practitioner_count(self, obj):
-        count = obj.practitioner.count()
-        return format_html('<b>{}</b>', count)
+        return obj.practitioner.count()
     practitioner_count.short_description = 'Practitioners'
 
 # ==================== AVAILABILITY ADMIN ====================
@@ -126,22 +127,6 @@ class ConsultationAdmin(admin.ModelAdmin):
     date_hierarchy = 'date'
     readonly_fields = ['version']
 
-    fieldsets = (
-        ('Participants', {
-            'fields': ('client', 'practitioner')
-        }),
-        ('Appointment Details', {
-            'fields': ('date', 'time', 'duration_minutes', 'status')
-        }),
-        ('Notes', {
-            'fields': ('client_notes', 'practitioner_notes')
-        }),
-        ('System', {
-            'fields': ('version',),
-            'classes': ('collapse',)
-        }),
-    )
-
 # ==================== REVIEW ADMIN ====================
 
 @admin.register(Review)
@@ -150,37 +135,3 @@ class ReviewAdmin(admin.ModelAdmin):
     list_filter = ['rating']
     search_fields = ['reviewer__email', 'comment']
     date_hierarchy = 'created_at'
-# ==================== PRACTITIONER APPLICATION ADMIN ====================
-
-@admin.register(PractitionerApplication)
-class PractitionerApplicationAdmin(admin.ModelAdmin):
-    list_display = [
-        'user_email', 'user_name', 'city', 'hourly_rate',
-        'years_of_experience', 'status_colored', 'created_at'
-    ]
-    list_filter = ['status', 'city', 'created_at']
-    search_fields = ['user__email', 'user__first_name', 'user__last_name', 'license_number']
-    readonly_fields = ['created_at', 'updated_at', 'reviewed_at', 'reviewed_by']
-    filter_horizontal = ['specialties']
-
-    def user_email(self, obj):
-        return obj.user.email
-    user_email.short_description = 'Email'
-
-    def user_name(self, obj):
-        return obj.user.get_full_name() or obj.user.email
-    user_name.short_description = 'Name'
-
-    def status_colored(self, obj):
-        colors = {
-            'pending': '#f39c12',
-            'approved': '#27ae60',
-            'rejected': '#e74c3c',
-            'more_info': '#3498db'
-        }
-        return format_html(
-            '<span style="color: white; background-color: {}; padding: 3px 8px; border-radius: 4px;">{}</span>',
-            colors.get(obj.status, '#95a5a6'),
-            obj.get_status_display()
-        )
-    status_colored.short_description = 'Status'
