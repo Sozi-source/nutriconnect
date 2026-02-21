@@ -1,118 +1,46 @@
 from django.contrib import admin
 from django.utils.html import format_html
 from django.contrib import messages
-from django.utils import timezone
 from django.db import transaction
 from .models import (
-    User, UserProfile, Practitioner, Specialty, PractitionerApplication,
+    User, UserProfile, Practitioner, Specialty,
     Availability, Consultation, Review
 )
+
 # ==================== ADMIN ACTIONS ====================
 
-@admin.action(description="✅ Approve selected applications (auto-create practitioners)")
-def approve_applications(modeladmin, request, queryset):
-    approved_count = 0
-    error_count = 0
-    
-    for application in queryset.filter(status='pending'):
-        try:
-            with transaction.atomic():
-                # 1. Update user profile role
-                profile = application.user.profile
-                profile.role = 'practitioner'
-                profile.save()
-                
-                # 2. Create practitioner profile
-                practitioner = Practitioner.objects.create(
-                    user=application.user,
-                    bio=application.bio,
-                    city=application.city,
-                    hourly_rate=application.hourly_rate,
-                    years_of_experience=application.years_of_experience,
-                    currency='KES',
-                    is_verified=True,
-                    profile_complete=False
-                )
-                
-                # 3. Add specialties
-                practitioner.specialties.set(application.specialties.all())
-                
-                # 4. Update application status
-                application.status = 'approved'
-                application.admin_notes = f"Approved by {request.user.email} on {timezone.now().strftime('%Y-%m-%d %H:%M')}"
-                application.reviewed_at = timezone.now()
-                application.reviewed_by = request.user
-                application.save()
-                
-                approved_count += 1
-                print(f"✅ Created practitioner for {application.user.email}")
-                
-        except Exception as e:
-            error_count += 1
-            print(f"❌ Error: {e}")
-    
-    print(f"Approved: {approved_count}, Errors: {error_count}")             
-
-@admin.action(description="❌ Reject selected applications")
-def reject_applications(modeladmin, request, queryset):
-    rejected_count = 0
-
-    for application in queryset.filter(status='pending'):
-        application.status = 'rejected'
-        application.admin_notes = f"Rejected by {request.user.email} on {timezone.now().strftime('%Y-%m-%d %H:%M')}"
-        application.reviewed_at = timezone.now()
-        application.reviewed_by = request.user
-        application.save()
-        rejected_count += 1
-
+@admin.action(description="✅ Approve selected practitioners")
+def approve_practitioners(modeladmin, request, queryset):
+    approved = queryset.update(is_verified=True)
     modeladmin.message_user(
         request,
-        f"❌ Rejected {rejected_count} applications.",
+        f"✅ Approved {approved} practitioners.",
+        level=messages.SUCCESS
+    )
+
+@admin.action(description="❌ Reject selected practitioners")
+def reject_practitioners(modeladmin, request, queryset):
+    rejected = queryset.update(is_verified=False)
+    modeladmin.message_user(
+        request,
+        f"❌ Rejected {rejected} practitioners.",
         level=messages.WARNING
     )
-
-
-@admin.action(description="📝 Mark as 'More Info Needed'")
-def request_more_info(modeladmin, request, queryset):
-    updated_count = 0
-
-    for application in queryset.filter(status='pending'):
-        application.status = 'more_info'
-        application.admin_notes = f"Additional information requested by {request.user.email} on {timezone.now().strftime('%Y-%m-%d %H:%M')}"
-        application.reviewed_at = timezone.now()
-        application.reviewed_by = request.user
-        application.save()
-        updated_count += 1
-
-    modeladmin.message_user(
-        request,
-        f"📝 Requested more info for {updated_count} applications.",
-        level=messages.INFO
-    )
-
 
 # ==================== USER ADMIN ====================
 
 @admin.register(User)
 class UserAdmin(admin.ModelAdmin):
-    list_display = ['email', 'first_name', 'last_name', 'is_active', 'is_staff', 'has_application']
+    list_display = ['email', 'first_name', 'last_name', 'is_active', 'is_staff', 'user_role']
     list_filter = ['is_active', 'is_staff']
     search_fields = ['email', 'first_name', 'last_name']
     ordering = ['email']
 
-    def has_application(self, obj):
-        try:
-            if hasattr(obj, 'practitioner_application'):
-                return format_html(
-                    '<span style="color: {};">{}</span>',
-                    'orange' if obj.practitioner_application.status == 'pending' else 'green',
-                    obj.practitioner_application.status
-                )
-        except:
-            pass
-        return 'No'
-    has_application.short_description = 'Application'
-
+    def user_role(self, obj):
+        if hasattr(obj, 'profile'):
+            return obj.profile.role
+        return 'No profile'
+    user_role.short_description = 'Role'
 
 # ==================== USER PROFILE ADMIN ====================
 
@@ -122,81 +50,19 @@ class UserProfileAdmin(admin.ModelAdmin):
     list_filter = ['role']
     search_fields = ['user__email', 'user__first_name', 'user__last_name', 'phone']
 
-
-# ==================== PRACTITIONER APPLICATION ADMIN ====================
-
-@admin.register(PractitionerApplication)
-class PractitionerApplicationAdmin(admin.ModelAdmin):
-    list_display = [
-        'user_email', 'user_name', 'city', 'hourly_rate',
-        'years_of_experience', 'status_colored', 'created_at'
-    ]
-    list_filter = ['status', 'city', 'created_at']
-    search_fields = ['user__email', 'user__first_name', 'user__last_name', 'license_number']
-    readonly_fields = ['created_at', 'updated_at', 'reviewed_at', 'reviewed_by']
-    actions = [approve_applications, reject_applications, request_more_info]
-    filter_horizontal = ['specialties']
-
-    fieldsets = (
-        ('User Information', {
-            'fields': ('user',)
-        }),
-        ('Professional Details', {
-            'fields': ('bio', 'city', 'hourly_rate', 'years_of_experience')
-        }),
-        ('Credentials', {
-            'fields': ('qualifications', 'license_number', 'specialties')
-        }),
-        ('Application Status', {
-            'fields': ('status', 'admin_notes', 'reviewed_at', 'reviewed_by')
-        }),
-        ('Timestamps', {
-            'fields': ('created_at', 'updated_at'),
-            'classes': ('collapse',)
-        }),
-    )
-
-    def user_email(self, obj):
-        return obj.user.email
-    user_email.short_description = 'Email'
-    user_email.admin_order_field = 'user__email'
-
-    def user_name(self, obj):
-        return obj.user.get_full_name() or obj.user.email
-    user_name.short_description = 'Name'
-    user_name.admin_order_field = 'user__first_name'
-
-    def status_colored(self, obj):
-        colors = {
-            'pending': '#f39c12',  # orange
-            'approved': '#27ae60',  # green
-            'rejected': '#e74c3c',  # red
-            'more_info': '#3498db'  # blue
-        }
-        return format_html(
-            '<span style="color: white; background-color: {}; padding: 3px 8px; border-radius: 4px; font-weight: bold;">{}</span>',
-            colors.get(obj.status, '#95a5a6'),
-            obj.get_status_display()
-        )
-    status_colored.short_description = 'Status'
-    status_colored.admin_order_field = 'status'
-
-    def save_model(self, request, obj, form, change):
-        super().save_model(request, obj, form, change)
-
-
 # ==================== PRACTITIONER ADMIN ====================
 
 @admin.register(Practitioner)
 class PractitionerAdmin(admin.ModelAdmin):
     list_display = [
         'user', 'city', 'hourly_rate', 'currency',
-        'years_of_experience', 'is_verified', 'profile_complete'
+        'years_of_experience', 'verification_status', 'profile_complete'
     ]
     list_filter = ['is_verified', 'profile_complete', 'city', 'currency']
     search_fields = ['user__email', 'user__first_name', 'user__last_name', 'city']
     filter_horizontal = ['specialties']
     readonly_fields = ['created_at', 'updated_at']
+    actions = [approve_practitioners, reject_practitioners]
 
     fieldsets = (
         ('User Information', {
@@ -214,24 +80,27 @@ class PractitionerAdmin(admin.ModelAdmin):
         }),
     )
 
+    def verification_status(self, obj):
+        if obj.is_verified:
+            return format_html(
+                '<span style="color: white; background-color: #27ae60; padding: 3px 8px; border-radius: 4px;">✅ Verified</span>'
+            )
+        else:
+            return format_html(
+                '<span style="color: white; background-color: #f39c12; padding: 3px 8px; border-radius: 4px;">⏳ Pending</span>'
+            )
+    verification_status.short_description = 'Status'
 
 # ==================== SPECIALTY ADMIN ====================
 
 @admin.register(Specialty)
 class SpecialtyAdmin(admin.ModelAdmin):
-    list_display = ['name', 'description', 'practitioner_count', 'application_count']
+    list_display = ['name', 'description', 'practitioner_count']
     search_fields = ['name']
 
     def practitioner_count(self, obj):
-        count = obj.practitioner.count()
-        return format_html('<b>{}</b>', count)
+        return obj.practitioner.count()
     practitioner_count.short_description = 'Practitioners'
-
-    def application_count(self, obj):
-        count = obj.practitionerapplication_set.count()
-        return format_html('<b>{}</b>', count)
-    application_count.short_description = 'Applications'
-
 
 # ==================== AVAILABILITY ADMIN ====================
 
@@ -244,7 +113,6 @@ class AvailabilityAdmin(admin.ModelAdmin):
     list_filter = ['recurrence_type', 'is_available', 'day_of_week']
     search_fields = ['practitioner__user__email', 'notes']
     date_hierarchy = 'specific_date'
-
 
 # ==================== CONSULTATION ADMIN ====================
 
@@ -259,23 +127,6 @@ class ConsultationAdmin(admin.ModelAdmin):
     date_hierarchy = 'date'
     readonly_fields = ['version']
 
-    fieldsets = (
-        ('Participants', {
-            'fields': ('client', 'practitioner')
-        }),
-        ('Appointment Details', {
-            'fields': ('date', 'time', 'duration_minutes', 'status')
-        }),
-        ('Notes', {
-            'fields': ('client_notes', 'practitioner_notes')
-        }),
-        ('System', {
-            'fields': ('version',),
-            'classes': ('collapse',)
-        }),
-    )
-
-
 # ==================== REVIEW ADMIN ====================
 
 @admin.register(Review)
@@ -284,4 +135,3 @@ class ReviewAdmin(admin.ModelAdmin):
     list_filter = ['rating']
     search_fields = ['reviewer__email', 'comment']
     date_hierarchy = 'created_at'
-
