@@ -3,13 +3,17 @@ from django.utils.html import format_html
 from django.contrib import messages
 from django.utils import timezone
 from django.db import transaction
+from .models import (
+    User, UserProfile, Practitioner, Specialty, PractitionerApplication,
+    Availability, Consultation, Review
+)
 # ==================== ADMIN ACTIONS ====================
 
 @admin.action(description="✅ Approve selected applications (auto-create practitioners)")
 def approve_applications(modeladmin, request, queryset):
     approved_count = 0
     error_count = 0
-
+    
     for application in queryset.filter(status='pending'):
         try:
             with transaction.atomic():
@@ -17,7 +21,7 @@ def approve_applications(modeladmin, request, queryset):
                 profile = application.user.profile
                 profile.role = 'practitioner'
                 profile.save()
-
+                
                 # 2. Create practitioner profile
                 practitioner = Practitioner.objects.create(
                     user=application.user,
@@ -27,35 +31,27 @@ def approve_applications(modeladmin, request, queryset):
                     years_of_experience=application.years_of_experience,
                     currency='KES',
                     is_verified=True,
-                    profile_complete=True
+                    profile_complete=False
                 )
-
+                
                 # 3. Add specialties
                 practitioner.specialties.set(application.specialties.all())
-
+                
                 # 4. Update application status
                 application.status = 'approved'
                 application.admin_notes = f"Approved by {request.user.email} on {timezone.now().strftime('%Y-%m-%d %H:%M')}"
                 application.reviewed_at = timezone.now()
                 application.reviewed_by = request.user
                 application.save()
-
+                
                 approved_count += 1
-
+                print(f"✅ Created practitioner for {application.user.email}")
+                
         except Exception as e:
             error_count += 1
-            modeladmin.message_user(
-                request,
-                f"Error approving {application.user.email}: {str(e)}",
-                level=messages.ERROR
-            )
-
-    modeladmin.message_user(
-        request,
-        f"✅ Approved {approved_count} applications. {error_count} errors.",
-        level=messages.SUCCESS if approved_count > 0 else messages.WARNING
-    )
-
+            print(f"❌ Error: {e}")
+    
+    print(f"Approved: {approved_count}, Errors: {error_count}")             
 
 @admin.action(description="❌ Reject selected applications")
 def reject_applications(modeladmin, request, queryset):
@@ -288,37 +284,4 @@ class ReviewAdmin(admin.ModelAdmin):
     list_filter = ['rating']
     search_fields = ['reviewer__email', 'comment']
     date_hierarchy = 'created_at'
-# ==================== PRACTITIONER APPLICATION ADMIN ====================
 
-@admin.register(PractitionerApplication)
-class PractitionerApplicationAdmin(admin.ModelAdmin):
-    list_display = [
-        'user_email', 'user_name', 'city', 'hourly_rate',
-        'years_of_experience', 'status_colored', 'created_at'
-    ]
-    list_filter = ['status', 'city', 'created_at']
-    search_fields = ['user__email', 'user__first_name', 'user__last_name', 'license_number']
-    readonly_fields = ['created_at', 'updated_at', 'reviewed_at', 'reviewed_by']
-    filter_horizontal = ['specialties']
-
-    def user_email(self, obj):
-        return obj.user.email
-    user_email.short_description = 'Email'
-
-    def user_name(self, obj):
-        return obj.user.get_full_name() or obj.user.email
-    user_name.short_description = 'Name'
-
-    def status_colored(self, obj):
-        colors = {
-            'pending': '#f39c12',
-            'approved': '#27ae60',
-            'rejected': '#e74c3c',
-            'more_info': '#3498db'
-        }
-        return format_html(
-            '<span style="color: white; background-color: {}; padding: 3px 8px; border-radius: 4px;">{}</span>',
-            colors.get(obj.status, '#95a5a6'),
-            obj.get_status_display()
-        )
-    status_colored.short_description = 'Status'
