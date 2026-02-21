@@ -451,7 +451,7 @@ class AvailabilityListView(generics.ListAPIView):
 
 class ConsultationCreateView(generics.CreateAPIView):
     queryset = Consultation.objects.all()
-    serializer_class = ConsultationCreateSerializer
+    serializer_class = ConsultationCreateSerializer  
     permission_classes = [IsAuthenticated]
 
     def get_serializer_context(self):

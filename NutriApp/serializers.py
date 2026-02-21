@@ -188,7 +188,6 @@ class PractitionerDetailSerializer(PractitionerSerializer):
         fields = PractitionerSerializer.Meta.fields + ['availabilities']
 
 # ==================== CONSULTATION SERIALIZERS ====================
-
 class ConsultationSerializer(serializers.ModelSerializer):
     practitioner_name = serializers.CharField(source='practitioner.user.get_full_name', read_only=True)
     client_name = serializers.CharField(source='client.get_full_name', read_only=True)
@@ -205,6 +204,9 @@ class ConsultationSerializer(serializers.ModelSerializer):
             'created_at', 'updated_at', 'version'
         ]
         read_only_fields = ['client', 'status', 'version', 'created_at', 'updated_at']
+        extra_kwargs = {
+            'practitioner': {'write_only': True}  # Add this to ensure practitioner is write-only
+        }
     
     def get_formatted_date(self, obj):
         return obj.date.strftime('%B %d, %Y')
@@ -213,6 +215,22 @@ class ConsultationSerializer(serializers.ModelSerializer):
         return obj.time.strftime('%I:%M %p')
     
     def validate(self, data):
+        # This is for READ operations only
+        return data
+
+
+class ConsultationCreateSerializer(serializers.ModelSerializer):
+    """Separate serializer for creation to handle validation properly"""
+    class Meta:
+        model = Consultation
+        fields = ['practitioner', 'date', 'time', 'duration_minutes', 'client_notes']
+    
+    def validate(self, data):
+        # Get the current user from context
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            raise serializers.ValidationError("Authentication required")
+        
         practitioner_id = data.get('practitioner')
         booking_date = data.get('date')
         booking_time = data.get('time')
@@ -264,27 +282,12 @@ class ConsultationSerializer(serializers.ModelSerializer):
         if booking_datetime < timezone.now():
             raise serializers.ValidationError("Cannot book appointments in the past")
         
-        return data
-
-class ConsultationCreateSerializer(serializers.ModelSerializer):
-    """Separate serializer for creation to handle validation properly"""
-    class Meta:
-        model = Consultation
-        fields = ['practitioner', 'date', 'time', 'duration_minutes', 'client_notes']
-    
-    def validate(self, data):
-        # Get the current user from context
-        request = self.context.get('request')
-        if not request or not request.user.is_authenticated:
-            raise serializers.ValidationError("Authentication required")
-        
+        # Add client to data
         data['client'] = request.user
         
-        # Delegate to main validation
-        validator = ConsultationSerializer(data=data, context=self.context)
-        validator.is_valid(raise_exception=True)
-        
         return data
+
+
 
 # ==================== REVIEW SERIALIZER ====================
 
