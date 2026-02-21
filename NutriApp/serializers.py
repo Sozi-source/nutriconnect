@@ -4,61 +4,124 @@ from django.core.exceptions import ValidationError
 from datetime import datetime
 
 # ==================== USER & PROFILE SERIALIZERS ====================
+from rest_framework import serializers
+from .models import User, UserProfile, Practitioner
+
+
+# ==================== USER PROFILE ====================
 
 class UserProfileSerializer(serializers.ModelSerializer):
     class Meta:
         model = UserProfile
         fields = ['id', 'role', 'phone']
 
+
+# ==================== USER REGISTRATION ====================
+
 class UserSerializer(serializers.ModelSerializer):
     password = serializers.CharField(write_only=True, required=True, min_length=8)
     profile = UserProfileSerializer(read_only=True)
 
+    # Core fields
     role = serializers.ChoiceField(
         choices=['client', 'practitioner'],
         write_only=True,
         required=False,
         default='client'
     )
+
     phone = serializers.CharField(
-        write_only=True, 
-        required=False, 
+        write_only=True,
+        required=False,
         allow_blank=True,
         default=''
     )
-    
+
+    # Practitioner-only fields (optional unless role=practitioner)
+    bio = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    city = serializers.CharField(write_only=True, required=False, allow_blank=True)
+    hourly_rate = serializers.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        write_only=True,
+        required=False
+    )
+    years_of_experience = serializers.IntegerField(
+        write_only=True,
+        required=False
+    )
+
     class Meta:
         model = User
-        fields = ['id', 'first_name', 'last_name', 'email', 'password', 'profile', 'role', 'phone']
-    
+        fields = [
+            'id',
+            'first_name',
+            'last_name',
+            'email',
+            'password',
+            'profile',
+            'role',
+            'phone',
+            # Practitioner extra fields
+            'bio',
+            'city',
+            'hourly_rate',
+            'years_of_experience'
+        ]
+
+    def validate(self, data):
+        """
+        Ensure practitioner fields are provided if role is practitioner
+        """
+        role = data.get('role', 'client')
+
+        if role == 'practitioner':
+            required_fields = ['bio', 'city', 'hourly_rate', 'years_of_experience']
+            missing = [field for field in required_fields if not data.get(field)]
+
+            if missing:
+                raise serializers.ValidationError({
+                    field: f"{field} is required for practitioner registration"
+                    for field in missing
+                })
+
+        return data
+
     def create(self, validated_data):
         role = validated_data.pop('role', 'client')
         phone = validated_data.pop('phone', '')
+
+        # Extract practitioner fields safely
+        bio = validated_data.pop('bio', '')
+        city = validated_data.pop('city', '')
+        hourly_rate = validated_data.pop('hourly_rate', 0.00)
+        years_of_experience = validated_data.pop('years_of_experience', 0)
 
         # Create user
         user = User.objects.create_user(**validated_data)
 
         # Create profile
-        profile = UserProfile.objects.create(
-            user=user, 
-            role=role, 
+        UserProfile.objects.create(
+            user=user,
+            role=role,
             phone=phone
         )
-        
-        # Auto-create practitioner if role is practitioner
+
+        # If practitioner → create full practitioner profile
         if role == 'practitioner':
             Practitioner.objects.create(
                 user=user,
-                hourly_rate=0.00,
+                bio=bio,
+                city=city,
+                hourly_rate=hourly_rate,
                 currency='KES',
-                city='',
-                bio='',
-                years_of_experience=0,
-                is_verified=False,
-                profile_complete=False
+                years_of_experience=years_of_experience,
+                is_verified=False,        # Admin should verify
+                profile_complete=True
             )
-        
+
         return user
+
 
 # ==================== SPECIALTY SERIALIZER ====================
 
