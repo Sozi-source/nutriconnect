@@ -7,9 +7,6 @@ from datetime import time
 
 # Abstract base class for timestamped models
 class TimeStampedModel(models.Model):
-    """
-    Abstract model that provides self-updating 'created_at' and 'updated_at' fields.
-    """
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
@@ -56,9 +53,6 @@ class User(AbstractUser):
     
     def get_full_name(self):
         return f"{self.first_name} {self.last_name}".strip()
-    
-    def get_short_name(self):
-        return self.first_name
 
 # User Profile Model
 class UserProfile(models.Model):
@@ -67,7 +61,6 @@ class UserProfile(models.Model):
         ('practitioner', 'Practitioner'),
     ]
     
-    # Phone number validator
     phone_validator = RegexValidator(
         regex=r'^\+?1?\d{9,15}$',
         message="Phone number must be entered in format: '+254712345678' (up to 15 digits)"
@@ -97,59 +90,7 @@ class Specialty(models.Model):
     def __str__(self):
         return self.name
 
-# Practitioner Application Model (NEW)
-class PractitionerApplication(TimeStampedModel):
-    """Application for users who want to become practitioners"""
-    STATUS_CHOICES = [
-        ('pending', 'Pending Review'),
-        ('approved', 'Approved'),
-        ('rejected', 'Rejected'),
-        ('more_info', 'More Info Needed'),
-    ]
-    
-    # Link to existing user (who is currently a client)
-    user = models.OneToOneField(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='practitioner_application'
-    )
-    
-    # Professional Information
-    bio = models.TextField()
-    city = models.CharField(max_length=100)
-    hourly_rate = models.DecimalField(
-        max_digits=10, 
-        decimal_places=2,
-        validators=[MinValueValidator(0)]
-    )
-    years_of_experience = models.PositiveIntegerField()
-    qualifications = models.TextField(help_text="Degrees, certifications, etc.")
-    license_number = models.CharField(max_length=100)
-    specialties = models.ManyToManyField(Specialty, blank=True)
-    
-    # Application Status
-    status = models.CharField(
-        max_length=20, 
-        choices=STATUS_CHOICES, 
-        default='pending'
-    )
-    admin_notes = models.TextField(blank=True, help_text="Internal admin notes")
-    reviewed_at = models.DateTimeField(null=True, blank=True)
-    reviewed_by = models.ForeignKey(
-        User, 
-        null=True, 
-        blank=True, 
-        on_delete=models.SET_NULL,
-        related_name='reviewed_applications'
-    )
-    
-    class Meta:
-        ordering = ['-created_at']
-    
-    def __str__(self):
-        return f"{self.user.get_full_name()} - {self.status}"
-
-# Practitioner Model
+# Practitioner Model (SIMPLIFIED)
 class Practitioner(TimeStampedModel):
     CURRENCY_CHOICES = [
         ('KES', 'Kenyan Shilling'),
@@ -161,7 +102,6 @@ class Practitioner(TimeStampedModel):
         max_digits=10, 
         decimal_places=2, 
         validators=[MinValueValidator(0)],
-        help_text="Hourly rate in selected currency",
         default=0.00,
         null=True,
         blank=True
@@ -171,7 +111,7 @@ class Practitioner(TimeStampedModel):
     bio = models.TextField(blank=True, null=True)
     city = models.CharField(max_length=100, db_index=True, blank=True, default='')
     years_of_experience = models.PositiveIntegerField(default=0, blank=True)
-    is_verified = models.BooleanField(default=False, db_index=True)
+    is_verified = models.BooleanField(default=False, db_index=True)  # Admin approval
     profile_complete = models.BooleanField(default=False)
 
     class Meta:
@@ -183,55 +123,6 @@ class Practitioner(TimeStampedModel):
     
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.city}"
-    
-    def is_available_at(self, date, time):
-        """
-        Check if practitioner is available at a specific date and time.
-        """
-        day_of_week = date.weekday()
-        
-        # First check if practitioner is unavailable on this date
-        if self.availabilities.filter(
-            recurrence_type=Availability.RecurrenceType.UNAVAILABLE,
-            specific_date=date,
-            is_available=False
-        ).exists():
-            return False
-        
-        # Check weekly recurring availability
-        weekly_available = self.availabilities.filter(
-            recurrence_type=Availability.RecurrenceType.WEEKLY,
-            day_of_week=day_of_week,
-            start_time__lte=time,
-            end_time__gte=time,
-            is_available=True
-        ).exists()
-        
-        if weekly_available:
-            return True
-        
-        # Check one-time availability
-        one_time_available = self.availabilities.filter(
-            recurrence_type=Availability.RecurrenceType.ONE_TIME,
-            specific_date=date,
-            start_time__lte=time,
-            end_time__gte=time,
-            is_available=True
-        ).exists()
-        
-        return one_time_available
-    
-    def get_upcoming_consultations(self, days=30):
-        """Get consultations for the next X days"""
-        from django.utils import timezone
-        from datetime import timedelta
-        
-        end_date = timezone.now().date() + timedelta(days=days)
-        return self.consultations.filter(
-            date__gte=timezone.now().date(),
-            date__lte=end_date,
-            status__in=['booked', 'completed']
-        ).order_by('date', 'time')
 
 # Availability Model
 class Availability(TimeStampedModel):
@@ -249,108 +140,20 @@ class Availability(TimeStampedModel):
         ONE_TIME = 'one_time', 'One-Time Adjustment'
         UNAVAILABLE = 'unavailable', 'Unavailable Block'
 
-    practitioner = models.ForeignKey(
-        Practitioner, 
-        on_delete=models.CASCADE, 
-        related_name='availabilities'
-    )
-    
-    # Type of availability
-    recurrence_type = models.CharField(
-        max_length=20,
-        choices=RecurrenceType.choices,
-        default=RecurrenceType.WEEKLY
-    )
-    
-    # Weekly recurring fields
-    day_of_week = models.IntegerField(
-        choices=Day.choices,
-        null=True,
-        blank=True,
-        help_text="For weekly recurring availability (0=Monday, 6=Sunday)"
-    )
-    
-    # One-time or date-specific fields
-    specific_date = models.DateField(
-        null=True, 
-        blank=True,
-        help_text="For one-time availability or unavailable blocks"
-    )
-    
-    # Time range
-    start_time = models.TimeField(help_text="Format: HH:MM:SS")
-    end_time = models.TimeField(help_text="Format: HH:MM:SS")
-    
-    # Optional fields
-    is_available = models.BooleanField(
-        default=True,
-        help_text="False for unavailable blocks (vacation, time off, holidays)"
-    )
-    notes = models.CharField(
-        max_length=255,
-        blank=True,
-        null=True,
-        help_text="Reason for unavailability (e.g., 'Vacation', 'Conference', 'Public Holiday')"
-    )
+    practitioner = models.ForeignKey(Practitioner, on_delete=models.CASCADE, related_name='availabilities')
+    recurrence_type = models.CharField(max_length=20, choices=RecurrenceType.choices, default=RecurrenceType.WEEKLY)
+    day_of_week = models.IntegerField(choices=Day.choices, null=True, blank=True)
+    specific_date = models.DateField(null=True, blank=True)
+    start_time = models.TimeField()
+    end_time = models.TimeField()
+    is_available = models.BooleanField(default=True)
+    notes = models.CharField(max_length=255, blank=True, null=True)
 
     class Meta:
         ordering = ['practitioner', 'day_of_week', 'start_time']
-        indexes = [
-            models.Index(fields=['practitioner', 'recurrence_type']),
-            models.Index(fields=['practitioner', 'specific_date']),
-            models.Index(fields=['practitioner', 'day_of_week']),
-            models.Index(fields=['practitioner', 'is_available']),
-            models.Index(fields=['specific_date', 'is_available'])
-        ]
-
-    def __str__(self):
-        if self.recurrence_type == 'weekly':
-            day_name = self.get_day_of_week_display()
-            status = "✅ Available" if self.is_available else "❌ Unavailable"
-            return f"{self.practitioner} - {day_name} {self.start_time.strftime('%H:%M')}-{self.end_time.strftime('%H:%M')} ({status})"
-        else:
-            date_str = self.specific_date.strftime('%Y-%m-%d')
-            status = "✅ Available" if self.is_available else "❌ Unavailable"
-            return f"{self.practitioner} - {date_str} {self.start_time.strftime('%H:%M')}-{self.end_time.strftime('%H:%M')} ({status})"
-
-    def clean(self):
-        """Validate the availability entry"""
-        # Validate based on recurrence type
-        if self.recurrence_type == 'weekly' and self.day_of_week is None:
-            raise ValidationError({'day_of_week': 'Weekly availability requires day_of_week'})
-        if self.recurrence_type in ['one_time', 'unavailable'] and self.specific_date is None:
-            raise ValidationError({'specific_date': f'{self.get_recurrence_type_display()} requires specific_date'})
-        
-        # Validate time range
-        if self.start_time >= self.end_time:
-            raise ValidationError('End time must be after start time')
-        
-        # Validate time slots are in 30-minute increments
-        if self.start_time.minute % 30 != 0 or self.end_time.minute % 30 != 0:
-            raise ValidationError('Time slots must be in 30-minute increments')
-        
-        # Prevent duplicate availability
-        if self.recurrence_type == 'weekly' and self.day_of_week is not None:
-            if Availability.objects.filter(
-                practitioner=self.practitioner,
-                recurrence_type='weekly',
-                day_of_week=self.day_of_week,
-                start_time=self.start_time
-            ).exclude(pk=self.pk).exists():
-                raise ValidationError('This weekly time slot already exists')
-        
-        if self.recurrence_type == 'one_time' and self.specific_date:
-            if Availability.objects.filter(
-                practitioner=self.practitioner,
-                recurrence_type='one_time',
-                specific_date=self.specific_date,
-                start_time=self.start_time
-            ).exclude(pk=self.pk).exists():
-                raise ValidationError('This one-time slot already exists')
     
-    def save(self, *args, **kwargs):
-        self.full_clean()
-        super().save(*args, **kwargs)
+    def __str__(self):
+        return f"{self.practitioner} - {self.start_time}"
 
 # Consultation Model
 class Consultation(TimeStampedModel):
@@ -360,85 +163,32 @@ class Consultation(TimeStampedModel):
         CANCELLED = 'cancelled', 'Cancelled'
         NO_SHOW = 'no_show', 'No Show'
 
-    client = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='consultations', 
-        limit_choices_to={'profile__role': 'client'}
-    )
-    practitioner = models.ForeignKey(
-        Practitioner, 
-        on_delete=models.CASCADE, 
-        related_name='consultations'
-    )
+    client = models.ForeignKey(User, on_delete=models.CASCADE, related_name='consultations')
+    practitioner = models.ForeignKey(Practitioner, on_delete=models.CASCADE, related_name='consultations')
     date = models.DateField(db_index=True)
     time = models.TimeField()
-    status = models.CharField(
-        max_length=50, 
-        choices=Status.choices, 
-        default=Status.BOOKED
-    )
+    status = models.CharField(max_length=50, choices=Status.choices, default=Status.BOOKED)
     duration_minutes = models.PositiveIntegerField(default=60)
     client_notes = models.TextField(blank=True, null=True)
     practitioner_notes = models.TextField(blank=True, null=True)
-    version = models.IntegerField(
-        default=1,
-        help_text="Optimistic locking version field to prevent double booking"
-    )
+    version = models.IntegerField(default=1)
 
     class Meta:
         unique_together = ['practitioner', 'date', 'time']
         ordering = ['-date', '-time']
-        indexes = [
-            models.Index(fields=['client', 'status']),
-            models.Index(fields=['practitioner', 'status']),
-            models.Index(fields=['date', 'status']),
-            models.Index(fields=['client', 'date']),
-        ]
-
-    def __str__(self):
-        return f"{self.client.get_full_name()} with {self.practitioner} on {self.date} at {self.time.strftime('%H:%M')}"
     
-    def can_cancel(self):
-        """Check if consultation can be cancelled (24h before appointment)"""
-        from django.utils import timezone
-        from datetime import datetime, timedelta
-        
-        appointment_datetime = datetime.combine(self.date, self.time)
-        time_diff = appointment_datetime - timezone.now()
-        return time_diff > timedelta(hours=24)
+    def __str__(self):
+        return f"{self.client.get_full_name()} with {self.practitioner}"
 
 # Review Model
 class Review(TimeStampedModel):
-    consultation = models.OneToOneField(
-        Consultation, 
-        on_delete=models.CASCADE, 
-        related_name='review'
-    )
-    reviewer = models.ForeignKey(
-        User, 
-        on_delete=models.CASCADE, 
-        related_name='reviews', 
-        null=True, 
-        blank=True
-    )
-    rating = models.PositiveSmallIntegerField(
-        choices=[(i, i) for i in range(1, 6)],
-        validators=[MinValueValidator(1), MaxValueValidator(5)]
-    )
+    consultation = models.OneToOneField(Consultation, on_delete=models.CASCADE, related_name='review')
+    reviewer = models.ForeignKey(User, on_delete=models.CASCADE, related_name='reviews', null=True, blank=True)
+    rating = models.PositiveSmallIntegerField(choices=[(i, i) for i in range(1, 6)])
     comment = models.TextField(blank=True, null=True)
 
     class Meta:
         ordering = ['-created_at']
-        indexes = [
-            models.Index(fields=['consultation', 'rating']),
-            models.Index(fields=['reviewer', 'created_at']),
-        ]
-
-    def __str__(self):
-        return f"Review by {self.reviewer.email if self.reviewer else 'Anonymous'} for {self.consultation} - {self.rating}⭐"
     
-    def clean(self):
-        """Ensure review is for a completed consultation"""
-        if self.consultation.status != Consultation.Status.COMPLETED:
-            raise ValidationError('Reviews can only be created for completed consultations')
+    def __str__(self):
+        return f"Review by {self.reviewer.email} - {self.rating}⭐"
