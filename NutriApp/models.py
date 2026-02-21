@@ -109,12 +109,15 @@ class Practitioner(TimeStampedModel):
         max_digits=10, 
         decimal_places=2, 
         validators=[MinValueValidator(0)],
-        help_text="Hourly rate in selected currency"
+        help_text="Hourly rate in selected currency",
+        default=0.00,
+        null=True,
+        blank=True
     )
-    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='practitioner')
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='practitioner', blank=True)
     specialties = models.ManyToManyField(Specialty, related_name='practitioner')
     bio = models.TextField(blank=True, null=True)
-    city = models.CharField(max_length=100, db_index=True)
+    city = models.CharField(max_length=100, db_index=True, blank=True, default='')
     years_of_experience = models.PositiveIntegerField(default=0)
     is_verified = models.BooleanField(default=False, db_index=True)
     profile_complete = models.BooleanField(default=False)
