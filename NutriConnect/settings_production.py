@@ -34,8 +34,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",      # Next.js local development
     "http://localhost:3001",      # Alternative port
     "http://127.0.0.1:3000",
-    "https://afyaconnect-three.vercel.app",  # Replace with your actual frontend URL
-    "https://afyaconnect-three.vercel.app",    # Your actual frontend URL - UPDATE THIS
+    "https://afyaconnect-rho.vercel.app/", 
+    "https://afyaconnect-rho.vercel.app/",   
 ]
 
 # Allow credentials (cookies, authorization headers)
@@ -67,8 +67,8 @@ CORS_ALLOW_METHODS = [
 # CSRF trusted origins (for session authentication)
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
-    "https://your-frontend.vercel.app",
-    "https://afyaconnect.vercel.app",  # Your actual frontend URL - UPDATE THIS
+    "https://afyaconnect-rho.vercel.app/",
+    "https://afyaconnect-rho.vercel.app/",  
 ]
 
 # ==============================================================================
