@@ -35,12 +35,77 @@ class UserAdmin(admin.ModelAdmin):
     list_filter = ['is_active', 'is_staff']
     search_fields = ['email', 'first_name', 'last_name']
     ordering = ['email']
+    actions = ['delete_selected_users']  # Custom delete action
 
     def user_role(self, obj):
         if hasattr(obj, 'profile'):
             return obj.profile.role
         return 'No profile'
     user_role.short_description = 'Role'
+
+    @admin.action(description="🗑️ Delete selected users (with cascade)")
+    def delete_selected_users(self, request, queryset):
+        """Custom delete action that handles cascade properly"""
+        if not request.user.is_superuser:
+            self.message_user(
+                request,
+                "❌ Only superusers can delete users.",
+                level=messages.ERROR
+            )
+            return
+
+        # Count related objects for display
+        total_users = queryset.count()
+        related_counts = {}
+        
+        with transaction.atomic():
+            for user in queryset:
+                # Count related objects before deletion
+                if hasattr(user, 'profile'):
+                    related_counts['profiles'] = related_counts.get('profiles', 0) + 1
+                if hasattr(user, 'practitioner'):
+                    related_counts['practitioners'] = related_counts.get('practitioners', 0) + 1
+                
+                # Count consultations where user is client
+                client_consults = Consultation.objects.filter(client=user).count()
+                if client_consults:
+                    related_counts['client_consultations'] = related_counts.get('client_consultations', 0) + client_consults
+                
+                # Count consultations where user is practitioner (via practitioner model)
+                if hasattr(user, 'practitioner'):
+                    prac_consults = Consultation.objects.filter(practitioner=user.practitioner).count()
+                    if prac_consults:
+                        related_counts['practitioner_consultations'] = related_counts.get('practitioner_consultations', 0) + prac_consults
+                
+                # Count reviews
+                reviews = Review.objects.filter(reviewer=user).count()
+                if reviews:
+                    related_counts['reviews'] = related_counts.get('reviews', 0) + reviews
+            
+            # Perform the deletion
+            deleted_count = queryset.delete()
+            
+            # Show summary message
+            summary = f"✅ Successfully deleted {total_users} user(s)."
+            if related_counts:
+                summary += " Related objects deleted:"
+                for key, count in related_counts.items():
+                    summary += f" {count} {key},"
+                summary = summary.rstrip(',')
+            
+            self.message_user(request, summary, level=messages.SUCCESS)
+
+    def get_actions(self, request):
+        actions = super().get_actions(request)
+        if not request.user.is_superuser:
+            # Remove delete action for non-superusers
+            if 'delete_selected' in actions:
+                del actions['delete_selected']
+        return actions
+
+    def has_delete_permission(self, request, obj=None):
+        # Only superusers can delete users
+        return request.user.is_superuser
 
 # ==================== USER PROFILE ADMIN ====================
 
