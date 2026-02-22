@@ -25,17 +25,17 @@ ALLOWED_HOSTS = [
     'localhost',
     '.pythonanywhere.com',  # Allow all subdomains
 ]
+
 # CORS middleware must be at the top
 if 'corsheaders.middleware.CorsMiddleware' not in MIDDLEWARE:
     MIDDLEWARE.insert(0, 'corsheaders.middleware.CorsMiddleware')
 
-# Allow your Next.js frontend domains
+# Allow your Next.js frontend domains - REMOVE trailing slashes!
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",      # Next.js local development
     "http://localhost:3001",      # Alternative port
     "http://127.0.0.1:3000",
-    "https://afyaconnect-three.vercel.app",  # Replace with your actual frontend URL
-    "https://afyaconnect-three.vercel.app",    # Your actual frontend URL - UPDATE THIS
+    "https://afyaconnect-rho.vercel.app",  # REMOVED trailing slash
 ]
 
 # Allow credentials (cookies, authorization headers)
@@ -64,11 +64,10 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-# CSRF trusted origins (for session authentication)
+# CSRF trusted origins (for session authentication) - REMOVE trailing slashes!
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
-    "https://your-frontend.vercel.app",
-    "https://afyaconnect.vercel.app",  # Your actual frontend URL - UPDATE THIS
+    "https://afyaconnect-rho.vercel.app",  # REMOVED trailing slash and duplicate
 ]
 
 # ==============================================================================
@@ -98,8 +97,10 @@ STATIC_URL = '/static/'
 STATIC_ROOT = '/home/osozi/nutriconnect/staticfiles'
 STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
 
-# Add whitenoise for static files
-MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
+# Add whitenoise for static files - ensure it's after CorsMiddleware
+if 'whitenoise.middleware.WhiteNoiseMiddleware' not in MIDDLEWARE:
+    # Insert after CorsMiddleware (which is at index 0)
+    MIDDLEWARE.insert(1, 'whitenoise.middleware.WhiteNoiseMiddleware')
 
 # ==============================================================================
 # MEDIA FILES CONFIGURATION
@@ -140,7 +141,7 @@ LOGGING = {
     },
     'loggers': {
         'django': {
-            'handlers': ['console'],
+            'handlers': ['console', 'file'],
             'level': 'INFO',
             'propagate': False,
         },
@@ -175,3 +176,4 @@ REST_FRAMEWORK = {
 
 print(f"🚀 Running in PRODUCTION mode with SQLite database")
 print(f"🌐 CORS allowed origins: {CORS_ALLOWED_ORIGINS}")
+print(f"🛡️ CSRF trusted origins: {CSRF_TRUSTED_ORIGINS}")

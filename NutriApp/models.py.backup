@@ -4,7 +4,6 @@ from django.contrib.auth.base_user import BaseUserManager
 from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 from django.core.exceptions import ValidationError
 from datetime import time
-from django.utils import timezone  # Add this import for timezone.now()
 
 # Abstract base class for timestamped models
 class TimeStampedModel(models.Model):
@@ -124,77 +123,6 @@ class Practitioner(TimeStampedModel):
     
     def __str__(self):
         return f"{self.user.get_full_name()} - {self.city}"
-
-# ==============================================================================
-# PRACTITIONER APPLICATION MODEL - ADD THIS SECTION
-# ==============================================================================
-
-class PractitionerApplication(TimeStampedModel):
-    """
-    Model to track practitioner applications for verification
-    """
-    STATUS_CHOICES = [
-        ('pending', 'Pending Review'),
-        ('approved', 'Approved'),
-        ('rejected', 'Rejected'),
-        ('info_needed', 'More Info Needed'),
-    ]
-    
-    practitioner = models.OneToOneField(Practitioner, on_delete=models.CASCADE, related_name='application')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
-    submitted_at = models.DateTimeField(auto_now_add=True)
-    reviewed_at = models.DateTimeField(null=True, blank=True)
-    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_applications')
-    
-    # Application details
-    qualifications = models.TextField(help_text="List your qualifications and certifications")
-    experience_description = models.TextField(help_text="Describe your relevant experience")
-    id_document = models.FileField(upload_to='applications/id/', null=True, blank=True)
-    certification_documents = models.FileField(upload_to='applications/certifications/', null=True, blank=True)
-    
-    # Admin notes
-    admin_notes = models.TextField(blank=True, null=True, help_text="Internal notes for admin")
-    rejection_reason = models.TextField(blank=True, null=True, help_text="Reason if rejected")
-    
-    class Meta:
-        ordering = ['-submitted_at']
-        indexes = [
-            models.Index(fields=['status', 'submitted_at']),
-        ]
-    
-    def __str__(self):
-        return f"Application for {self.practitioner.user.get_full_name()} - {self.status}"
-    
-    def approve(self, admin_user):
-        """Approve the application and verify the practitioner"""
-        self.status = 'approved'
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = admin_user
-        self.save()
-        
-        # Verify the practitioner
-        self.practitioner.is_verified = True
-        self.practitioner.save()
-    
-    def reject(self, admin_user, reason):
-        """Reject the application"""
-        self.status = 'rejected'
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = admin_user
-        self.rejection_reason = reason
-        self.save()
-    
-    def request_more_info(self, admin_user, notes):
-        """Request more information from the practitioner"""
-        self.status = 'info_needed'
-        self.reviewed_at = timezone.now()
-        self.reviewed_by = admin_user
-        self.admin_notes = notes
-        self.save()
-
-# ==============================================================================
-# END OF PRACTITIONER APPLICATION MODEL
-# ==============================================================================
 
 # Availability Model
 class Availability(TimeStampedModel):
