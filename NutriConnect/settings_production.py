@@ -42,8 +42,7 @@ if 'corsheaders.middleware.CorsMiddleware' not in MIDDLEWARE:
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",
     "http://localhost:3001",
-    "http://127.0.0.1:3000",
-    "https://afyaconnect-rho.vercel.app",
+    "http://127.0.0.1:3000"
 ]
 
 # Allow credentials (cookies, authorization headers)
@@ -75,7 +74,6 @@ CORS_ALLOW_METHODS = [
 # CSRF trusted origins (for session authentication)
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
-    "https://afyaconnect-rho.vercel.app",
 ]
 
 # ==============================================================================
