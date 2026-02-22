@@ -35,12 +35,8 @@ CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",      # Next.js local development
     "http://localhost:3001",      # Alternative port
     "http://127.0.0.1:3000",
-<<<<<<< HEAD
-    "https://afyaconnect-rho.vercel.app",  # REMOVED trailing slash
-=======
-    "https://afyaconnect-rho.vercel.app/", 
-    "https://afyaconnect-rho.vercel.app/",   
->>>>>>> 1f846eb187c9099a488a6714e8b82e96d3b6b09b
+    "https://afyaconnect-bm8i.vercel.app/", 
+    "https://afyaconnect-bm8i.vercel.app/",   
 ]
 
 # Allow credentials (cookies, authorization headers)
@@ -72,12 +68,8 @@ CORS_ALLOW_METHODS = [
 # CSRF trusted origins (for session authentication) - REMOVE trailing slashes!
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
-<<<<<<< HEAD
-    "https://afyaconnect-rho.vercel.app",  # REMOVED trailing slash and duplicate
-=======
-    "https://afyaconnect-rho.vercel.app/",
-    "https://afyaconnect-rho.vercel.app/",  
->>>>>>> 1f846eb187c9099a488a6714e8b82e96d3b6b09b
+    "/https://afyaconnect-bm8i.vercel.app/",
+    "/https://afyaconnect-bm8i.vercel.app/",  
 ]
 
 # ==============================================================================
