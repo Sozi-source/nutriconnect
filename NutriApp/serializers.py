@@ -8,7 +8,6 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = ['id', 'role', 'phone']
 
 class RegisterSerializer(serializers.ModelSerializer):
-    username = serializers.CharField(write_only=True, required=True)
     password = serializers.CharField(write_only=True, min_length=8)
     role = serializers.ChoiceField(choices=['client', 'practitioner'], write_only=True)
     phone = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -22,7 +21,6 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'username',
             'email', 
             'first_name', 
             'last_name', 
