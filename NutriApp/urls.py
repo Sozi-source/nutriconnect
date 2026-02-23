@@ -32,6 +32,14 @@ practitioner_patterns = [
     path('me/', views.MyPractitionerProfileView.as_view(), name='practitioner-me'),
 ]
 
+#Consultation URLS
+consultation_patterns = [
+    path('my-client/', views.MyClientConsultationsView.as_view()),
+    path('my-practitioner/', views.MyPractitionerConsultationsView.as_view()),
+    path('completed/no-review/', views.CompletedConsultationsNoReviewView.as_view()),
+    path('metrics/', views.ConsultationMetricsView.as_view()),
+]
+
 # Main URL patterns
 urlpatterns = [
     # Root
@@ -48,7 +56,7 @@ urlpatterns = [
     path('specialties/', views.SpecialtyListView.as_view(), name='specialty-list'),
     path('practitioners/', include(practitioner_patterns)),
     path('availability/', views.AvailabilityListCreateView.as_view(), name='availability-list'),
-    path('consultations/', views.ConsultationListCreateView.as_view(), name='consultation-list'),
+    path('consultations/', include(consultation_patterns)),
     
     # Admin
     path('admin/practitioners/pending/', views.AdminPendingPractitionersView.as_view(), name='admin-pending'),

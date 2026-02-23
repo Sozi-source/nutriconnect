@@ -5,6 +5,7 @@ from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 from .models import User, Practitioner, Specialty, Availability, Consultation, Review
+from rest_framework.views import APIView
 from .serializers import (
     RegisterSerializer, UserSerializer, PractitionerSerializer,
     SpecialtySerializer, AvailabilitySerializer, ConsultationSerializer,
@@ -209,3 +210,93 @@ class ConsultationDetailView(generics.RetrieveUpdateDestroyAPIView):
         return Consultation.objects.filter(
             Q(client=self.request.user) | Q(practitioner__user=self.request.user)
         )
+
+# ==============================================================================
+# CLIENT CONSULTATIONS (For client dashboard)
+# ==============================================================================
+
+class MyClientConsultationsView(generics.ListAPIView):
+    """GET /consultations/my-client/ - Shows client's consultations"""
+    serializer_class = ConsultationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        queryset = Consultation.objects.filter(client=self.request.user)
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        return queryset.order_by('-date', '-time')
+
+
+# ==============================================================================
+# PRACTITIONER CONSULTATIONS (For practitioner dashboard)
+# ==============================================================================
+
+class MyPractitionerConsultationsView(generics.ListAPIView):
+    """GET /consultations/my-practitioner/ - Shows practitioner's consultations"""
+    serializer_class = ConsultationSerializer
+    permission_classes = [IsAuthenticated, IsPractitionerOrAdmin]
+
+    def get_queryset(self):
+        queryset = Consultation.objects.filter(practitioner__user=self.request.user)
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        return queryset.order_by('-date', '-time')
+
+
+# ==============================================================================
+# COMPLETED CONSULTATIONS WITHOUT REVIEWS (For review feature)
+# ==============================================================================
+
+class CompletedConsultationsNoReviewView(generics.ListAPIView):
+    """GET /consultations/completed/no-review/ - Consultations ready for review"""
+    serializer_class = ConsultationSerializer
+    permission_classes = [IsAuthenticated]
+
+    def get_queryset(self):
+        return Consultation.objects.filter(
+            client=self.request.user,
+            status='completed',
+            review__isnull=True
+        ).order_by('-date', '-time')
+
+
+# ==============================================================================
+# DASHBOARD METRICS (For statistics cards)
+# ==============================================================================
+
+class ConsultationMetricsView(APIView):
+    """GET /consultations/metrics/ - Dashboard statistics"""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        user = request.user
+        
+        if hasattr(user, 'practitioner'):
+            # Practitioner metrics
+            consultations = Consultation.objects.filter(practitioner__user=user)
+            completed = consultations.filter(status='completed')
+            
+            metrics = {
+                'total_consultations': consultations.count(),
+                'completed_consultations': completed.count(),
+                'upcoming_consultations': consultations.filter(status='booked').count(),
+                'cancelled_consultations': consultations.filter(status='cancelled').count(),
+                'total_earnings': sum(c.price or 500 for c in completed),
+            }
+        else:
+            # Client metrics
+            consultations = Consultation.objects.filter(client=user)
+            completed = consultations.filter(status='completed')
+            
+            metrics = {
+                'total_consultations': consultations.count(),
+                'completed_consultations': completed.count(),
+                'upcoming_consultations': consultations.filter(status='booked').count(),
+                'cancelled_consultations': consultations.filter(status='cancelled').count(),
+                'total_spent': sum(c.price or 500 for c in completed),
+                'pending_reviews': consultations.filter(status='completed', review__isnull=True).count(),
+            }
+        
+        return Response(metrics)
