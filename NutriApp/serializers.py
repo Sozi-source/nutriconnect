@@ -8,7 +8,7 @@ from django.db import transaction
 
 # ==============================================================================
 # PROFILE SERIALIZERS
-# ==============================================================================
+#==============================================================================
 
 class UserProfileSerializer(serializers.ModelSerializer):
     """Serializer for user profile data"""
@@ -112,6 +112,8 @@ class RegisterSerializer(serializers.ModelSerializer):
             # Create practitioner if role is practitioner
             if role == 'practitioner':
                 self._create_practitioner(user, practitioner_data)
+                # NOTE: PractitionerApplication is NOT created here
+                # This keeps registration simple and separate from the application process
             
             return user
 
@@ -160,6 +162,27 @@ class PractitionerApplicationCreateSerializer(serializers.ModelSerializer):
                 "You must accept the terms and conditions"
             )
         return data
+    
+    def create(self, validated_data):
+        """Create application for existing practitioner"""
+        request = self.context.get('request')
+        if request and hasattr(request, 'user'):
+            user = request.user
+            # Check if user has practitioner profile
+            if not hasattr(user, 'practitioner'):
+                raise serializers.ValidationError(
+                    "User does not have a practitioner profile"
+                )
+            # Check if application already exists
+            if PractitionerApplication.objects.filter(user=user).exists():
+                raise serializers.ValidationError(
+                    "Application already exists for this user"
+                )
+            
+            validated_data['user'] = user
+            validated_data['practitioner'] = user.practitioner
+            return super().create(validated_data)
+        raise serializers.ValidationError("Authentication required")
 
 
 class PractitionerApplicationUpdateSerializer(serializers.ModelSerializer):

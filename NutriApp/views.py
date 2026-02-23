@@ -21,6 +21,7 @@ from .serializers import (
     PractitionerSerializer, PractitionerDetailSerializer,
     PractitionerApplicationSerializer, 
     PractitionerApplicationCreateSerializer,
+    PractitionerApplicationUpdateSerializer,
     PractitionerApplicationReviewSerializer,
     
     # Specialty serializers
@@ -68,7 +69,7 @@ def health_check(request):
 # ==============================================================================
 
 class RegisterView(generics.CreateAPIView):
-    """User registration endpoint"""
+    """User registration endpoint - creates User, Profile, and optionally Practitioner"""
     serializer_class = RegisterSerializer
     permission_classes = [AllowAny]
 
@@ -81,14 +82,12 @@ class LoginView(APIView):
         email = request.data.get('email')
         password = request.data.get('password')
         
-        # Validate input
         if not email or not password:
             return Response(
                 {'error': 'Please provide both email and password'},
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # Authenticate user
         user = authenticate(request, username=email, password=password)
         
         if user is not None:
@@ -99,6 +98,12 @@ class LoginView(APIView):
             role = 'client'
             if hasattr(user, 'profile'):
                 role = user.profile.role
+            
+            # Check for existing application
+            has_application = hasattr(user, 'practitioner_application')
+            application_status = None
+            if has_application:
+                application_status = user.practitioner_application.status
             
             return Response({
                 'token': token.key,
@@ -111,6 +116,8 @@ class LoginView(APIView):
                     'is_practitioner': hasattr(user, 'practitioner'),
                     'is_verified': hasattr(user, 'practitioner') and user.practitioner.is_verified,
                     'is_staff': user.is_staff,
+                    'has_application': has_application,
+                    'application_status': application_status,
                 }
             })
         else:
@@ -147,10 +154,17 @@ class CurrentUserView(generics.RetrieveAPIView):
 # ==============================================================================
 
 class PractitionerApplicationCreateView(APIView):
-    """Create a new practitioner application"""
-    permission_classes = [IsAuthenticated]
+    """Create a new practitioner application for EXISTING practitioner"""
+    permission_classes = [IsAuthenticated, IsPractitionerUser]
     
     def post(self, request):
+        # Check if user has practitioner profile
+        if not hasattr(request.user, 'practitioner'):
+            return Response(
+                {'error': 'You must be registered as a practitioner first'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
         # Check if user already has an application
         if hasattr(request.user, 'practitioner_application'):
             return Response(
@@ -158,9 +172,12 @@ class PractitionerApplicationCreateView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        serializer = PractitionerApplicationCreateSerializer(data=request.data)
+        serializer = PractitionerApplicationCreateSerializer(
+            data=request.data,
+            context={'request': request}
+        )
         if serializer.is_valid():
-            application = serializer.save(user=request.user)
+            application = serializer.save()
             return Response({
                 'message': 'Application created successfully',
                 'application_id': application.id,
@@ -171,7 +188,7 @@ class PractitionerApplicationCreateView(APIView):
 
 
 class PractitionerApplicationDetailView(APIView):
-    """Get or update user's practitioner application"""
+    """Get user's practitioner application"""
     permission_classes = [IsAuthenticated, CanManageOwnApplication]
     
     def get(self, request):
@@ -181,6 +198,11 @@ class PractitionerApplicationDetailView(APIView):
         )
         serializer = PractitionerApplicationSerializer(application)
         return Response(serializer.data)
+
+
+class PractitionerApplicationUpdateView(APIView):
+    """Update draft or info_needed application"""
+    permission_classes = [IsAuthenticated, CanManageOwnApplication]
     
     def put(self, request):
         application = get_object_or_404(
@@ -188,7 +210,7 @@ class PractitionerApplicationDetailView(APIView):
             user=request.user,
             status__in=['draft', 'info_needed']
         )
-        serializer = PractitionerApplicationCreateSerializer(
+        serializer = PractitionerApplicationUpdateSerializer(
             application, 
             data=request.data,
             partial=True
@@ -204,7 +226,7 @@ class PractitionerApplicationDetailView(APIView):
 
 class PractitionerApplicationSubmitView(APIView):
     """Submit application for review"""
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, CanManageOwnApplication]
     
     def post(self, request):
         application = get_object_or_404(
@@ -224,6 +246,23 @@ class PractitionerApplicationSubmitView(APIView):
         return Response({
             'message': 'Application submitted for review',
             'status': 'pending'
+        })
+
+
+class PractitionerApplicationStatusView(APIView):
+    """Check if user has an application and its status"""
+    permission_classes = [IsAuthenticated]
+    
+    def get(self, request):
+        if hasattr(request.user, 'practitioner_application'):
+            application = request.user.practitioner_application
+            return Response({
+                'has_application': True,
+                'status': application.status,
+                'application_id': application.id
+            })
+        return Response({
+            'has_application': False
         })
 
 
@@ -635,7 +674,7 @@ class AdminPendingPractitionersView(generics.ListAPIView):
 
 
 class AdminApprovePractitionerView(generics.UpdateAPIView):
-    """Admin: Approve a practitioner"""
+    """Admin: Approve a practitioner (direct approval without application)"""
     queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
     permission_classes = [IsAdminUser]
