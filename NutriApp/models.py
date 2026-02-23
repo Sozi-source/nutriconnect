@@ -264,3 +264,62 @@ class Review(TimeStampedModel):
     
     def __str__(self):
         return f"Review by {self.reviewer.email} - {self.rating}⭐"
+#=====================================================================================================
+# NOTIFICATION MODEL
+#=====================================================================================================
+class Notification(TimeStampedModel):
+    """
+    Notification model for user alerts and updates
+    """
+    class NotificationType(models.TextChoices):
+        CONSULTATION_REQUEST = 'consultation_request', 'New Consultation Request'
+        CONSULTATION_CONFIRMED = 'consultation_confirmed', 'Consultation Confirmed'
+        CONSULTATION_CANCELLED = 'consultation_cancelled', 'Consultation Cancelled'
+        CONSULTATION_COMPLETED = 'consultation_completed', 'Consultation Completed'
+        REVIEW_RECEIVED = 'review_received', 'New Review Received'
+        PAYMENT_RECEIVED = 'payment_received', 'Payment Received'
+        PRACTITIONER_VERIFIED = 'practitioner_verified', 'Account Verified'
+        SYSTEM = 'system', 'System Notification'
+
+    recipient = models.ForeignKey(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='notifications',
+        db_index=True
+    )
+    notification_type = models.CharField(
+        max_length=30, 
+        choices=NotificationType.choices,
+        db_index=True
+    )
+    title = models.CharField(max_length=255)
+    message = models.TextField()
+    data = models.JSONField(default=dict, blank=True)  # Store additional data like consultation_id, review_id
+    is_read = models.BooleanField(default=False, db_index=True)
+    read_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['recipient', '-created_at']),
+            models.Index(fields=['recipient', 'is_read']),
+        ]
+    
+    def __str__(self):
+        return f"{self.recipient.email} - {self.title[:30]}"
+    
+    def mark_as_read(self):
+        """Mark notification as read"""
+        if not self.is_read:
+            self.is_read = True
+            self.read_at = timezone.now()
+            self.save(update_fields=['is_read', 'read_at', 'updated_at'])
+    
+    @classmethod
+    def mark_all_as_read(cls, user):
+        """Mark all unread notifications as read for a user"""
+        return cls.objects.filter(recipient=user, is_read=False).update(
+            is_read=True,
+            read_at=timezone.now(),
+            updated_at=timezone.now()
+        )

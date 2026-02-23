@@ -21,6 +21,8 @@ def api_root(request):
             "Availability": f"{base_url}/availability/",
             "Consultations": f"{base_url}/consultations/",
             "Admin - Pending": f"{base_url}/admin/practitioners/pending/",
+            "Notifications": f"{base_url}/notifications/",
+            "Notification Unread Count": f"{base_url}/notifications/unread-count/",
             "Admin - Approve": f"{base_url}/admin/practitioners/<id>/approve/"
         }
     })
@@ -38,6 +40,15 @@ consultation_patterns = [
     path('my-practitioner/', views.MyPractitionerConsultationsView.as_view()),
     path('completed/no-review/', views.CompletedConsultationsNoReviewView.as_view()),
     path('metrics/', views.ConsultationMetricsView.as_view()),
+]
+
+#Notification URLS
+notification_patterns =[
+    path('', views.NotificationListView.as_view(), name='notification-list'),
+    path('<int:pk>/', views.NotificationDetailView.as_view(), name='notification-detail'),
+    path('<int:pk>/read/', views.NotificationMarkReadView.as_view(), name='notification-mark-read'),
+    path('mark-all-read/', views.NotificationMarkAllReadView.as_view(), name='notification-mark-all-read'),
+    path('unread-count/', views.NotificationUnreadCountView.as_view(), name='notification-unread-count'),
 ]
 
 # Main URL patterns
@@ -61,4 +72,8 @@ urlpatterns = [
     # Admin
     path('admin/practitioners/pending/', views.AdminPendingPractitionersView.as_view(), name='admin-pending'),
     path('admin/practitioners/<int:pk>/approve/', views.AdminApprovePractitionerView.as_view(), name='admin-approve'),
+
+    #Notifications
+    path('notifications/', include(notification_patterns)),
+
 ]

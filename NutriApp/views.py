@@ -4,12 +4,12 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated, IsAdminUser, AllowAny
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
-from .models import User, Practitioner, Specialty, Availability, Consultation, Review
+from .models import User, Practitioner, Specialty, Availability, Consultation, Review, Notification
 from rest_framework.views import APIView
 from .serializers import (
     RegisterSerializer, UserSerializer, PractitionerSerializer,
     SpecialtySerializer, AvailabilitySerializer, ConsultationSerializer,
-    ReviewSerializer
+    ReviewSerializer, NotificationSerializer
 )
 from .permissions import (
     IsClientUser, IsPractitionerUser, IsOwnerOrAdmin,
@@ -300,3 +300,75 @@ class ConsultationMetricsView(APIView):
             }
         
         return Response(metrics)
+    
+
+    #================================================================================================
+    # NOTIFICATION VIEWS
+    #================================================================================================
+
+class NotificationListView(generics.ListAPIView):
+    """
+    GET /notifications/
+    Returns all notifications for the current user
+    """
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+
+
+class NotificationDetailView(generics.RetrieveAPIView):
+    """
+    GET /notifications/{id}/
+    Returns a specific notification
+    """
+    serializer_class = NotificationSerializer
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get_queryset(self):
+        return Notification.objects.filter(recipient=self.request.user)
+
+
+class NotificationMarkReadView(APIView):
+    """
+    POST /notifications/{id}/read/
+    Mark a specific notification as read
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request, pk):
+        notification = get_object_or_404(
+            Notification, 
+            pk=pk, 
+            recipient=request.user
+        )
+        notification.mark_as_read()
+        return Response({'status': 'marked as read'})
+
+
+class NotificationMarkAllReadView(APIView):
+    """
+    POST /notifications/mark-all-read/
+    Mark all user's notifications as read
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def post(self, request):
+        count = Notification.mark_all_as_read(request.user)
+        return Response({'marked_read': count})
+
+
+class NotificationUnreadCountView(APIView):
+    """
+    GET /notifications/unread-count/
+    Returns count of unread notifications
+    """
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        count = Notification.objects.filter(
+            recipient=request.user,
+            is_read=False
+        ).count()
+        return Response({'unread_count': count})
