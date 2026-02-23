@@ -16,6 +16,8 @@ from .permissions import (
     IsClientOrAdmin, IsPractitionerOrAdmin, CanManageOwnAvailability,
     CanManageOwnConsultations, PreventSelfBooking
 )
+from django.contrib.auth import authenticate, login
+from rest_framework.authtoken.models import Token
 
 # ==================== PUBLIC VIEWS ====================
 
@@ -30,27 +32,39 @@ class RegisterView(generics.CreateAPIView):
 
 # ==================== AUTH VIEWS ====================
 
-from rest_framework.authtoken.views import ObtainAuthToken
-from rest_framework.authtoken.models import Token
-
-class LoginView(ObtainAuthToken):
-    def post(self, request, *args, **kwargs):
-        serializer = self.get_serializer(data=request.data)
-        serializer.is_valid(raise_exception=True)
-        user = serializer.validated_data['user']
-        token, _ = Token.objects.get_or_create(user=user)
+class LoginView(APIView):
+    permission_classes = [AllowAny]
+    
+    def post(self, request):
+        email = request.data.get('email')
+        password = request.data.get('password')
         
-        return Response({
-            'token': token.key,
-            'user_id': user.pk,
-            'email': user.email,
-            'first_name': user.first_name,
-            'last_name': user.last_name,
-            'role': user.profile.role if hasattr(user, 'profile') else 'client',
-            'is_practitioner': hasattr(user, 'practitioner'),
-            'is_verified': hasattr(user, 'practitioner') and user.practitioner.is_verified,
-            'is_staff': user.is_staff,
-        })
+        if not email or not password:
+            return Response(
+                {'error': 'Please provide both email and password'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        user = authenticate(request, username=email, password=password)
+        
+        if user is not None:
+            login(request, user)
+            token, _ = Token.objects.get_or_create(user=user)
+            
+            return Response({
+                'token': token.key,
+                'user': {
+                    'email': user.email,
+                    'first_name': user.first_name,
+                    'last_name': user.last_name,
+                    'role': user.profile.role if hasattr(user, 'profile') else 'client',
+                }
+            })
+        else:
+            return Response(
+                {'error': 'Invalid email or password'},
+                status=status.HTTP_401_UNAUTHORIZED
+            )
 
 class LogoutView(generics.GenericAPIView):
     permission_classes = [IsAuthenticated]
@@ -71,11 +85,6 @@ class CurrentUserView(generics.RetrieveAPIView):
 # ==================== PRACTITIONER VIEWS ====================
 
 class PractitionerListView(generics.ListAPIView):
-    """
-    List all verified practitioners.
-    Accessible by: Clients and Admins only
-    Practitioners cannot view the list (to prevent self-booking)
-    """
     serializer_class = PractitionerSerializer
     permission_classes = [IsAuthenticated, IsClientOrAdmin]
     
@@ -83,19 +92,11 @@ class PractitionerListView(generics.ListAPIView):
         return Practitioner.objects.filter(is_verified=True)
 
 class PractitionerDetailView(generics.RetrieveAPIView):
-    """
-    View single practitioner details.
-    Accessible by: Clients and Admins only
-    """
     queryset = Practitioner.objects.filter(is_verified=True)
     serializer_class = PractitionerSerializer
     permission_classes = [IsAuthenticated, IsClientOrAdmin]
 
 class MyPractitionerProfileView(generics.RetrieveAPIView):
-    """
-    Get current user's practitioner profile.
-    Accessible by: Practitioners only
-    """
     serializer_class = PractitionerSerializer
     permission_classes = [IsAuthenticated, IsPractitionerOrAdmin]
     
@@ -105,7 +106,6 @@ class MyPractitionerProfileView(generics.RetrieveAPIView):
 # ==================== ADMIN VIEWS ====================
 
 class AdminPendingPractitionersView(generics.ListAPIView):
-    """Admin view - see all unverified practitioners"""
     serializer_class = PractitionerSerializer
     permission_classes = [IsAdminUser]
     
@@ -113,7 +113,6 @@ class AdminPendingPractitionersView(generics.ListAPIView):
         return Practitioner.objects.filter(is_verified=False)
 
 class AdminApprovePractitionerView(generics.UpdateAPIView):
-    """Admin approves a practitioner"""
     queryset = Practitioner.objects.all()
     serializer_class = PractitionerSerializer
     permission_classes = [IsAdminUser]
@@ -127,10 +126,6 @@ class AdminApprovePractitionerView(generics.UpdateAPIView):
 # ==================== SPECIALTY VIEWS ====================
 
 class SpecialtyListView(generics.ListAPIView):
-    """
-    List all specialties.
-    Accessible by: All authenticated users
-    """
     queryset = Specialty.objects.all()
     serializer_class = SpecialtySerializer
     permission_classes = [IsAuthenticated]
@@ -138,11 +133,6 @@ class SpecialtyListView(generics.ListAPIView):
 # ==================== AVAILABILITY VIEWS ====================
 
 class AvailabilityListCreateView(generics.ListCreateAPIView):
-    """
-    List and create availability slots.
-    Practitioners can only see/create their own.
-    Clients cannot access.
-    """
     serializer_class = AvailabilitySerializer
     permission_classes = [IsAuthenticated, IsPractitionerOrAdmin]
     
@@ -156,10 +146,6 @@ class AvailabilityListCreateView(generics.ListCreateAPIView):
         serializer.save(practitioner=practitioner)
 
 class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    Retrieve, update or delete an availability slot.
-    Practitioners can only manage their own.
-    """
     serializer_class = AvailabilitySerializer
     permission_classes = [IsAuthenticated, IsPractitionerOrAdmin, CanManageOwnAvailability]
     
@@ -171,13 +157,6 @@ class AvailabilityDetailView(generics.RetrieveUpdateDestroyAPIView):
 # ==================== CONSULTATION VIEWS ====================
 
 class ConsultationListCreateView(generics.ListCreateAPIView):
-    """
-    List and create consultations.
-    - Clients see their own consultations
-    - Practitioners see their own consultations
-    - Admins see all
-    - Prevents practitioners from booking themselves
-    """
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated, PreventSelfBooking]
     
@@ -190,17 +169,12 @@ class ConsultationListCreateView(generics.ListCreateAPIView):
         )
     
     def perform_create(self, serializer):
-        # Check if practitioner is trying to book themselves
         practitioner = serializer.validated_data.get('practitioner')
         if practitioner.user == self.request.user:
             raise PermissionError("Practitioners cannot book themselves")
         serializer.save(client=self.request.user)
 
 class ConsultationDetailView(generics.RetrieveUpdateDestroyAPIView):
-    """
-    Retrieve, update or delete a consultation.
-    Users can only access their own consultations.
-    """
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated, CanManageOwnConsultations]
     
@@ -211,12 +185,7 @@ class ConsultationDetailView(generics.RetrieveUpdateDestroyAPIView):
             Q(client=self.request.user) | Q(practitioner__user=self.request.user)
         )
 
-# ==============================================================================
-# CLIENT CONSULTATIONS (For client dashboard)
-# ==============================================================================
-
 class MyClientConsultationsView(generics.ListAPIView):
-    """GET /consultations/my-client/ - Shows client's consultations"""
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated]
 
@@ -227,13 +196,7 @@ class MyClientConsultationsView(generics.ListAPIView):
             queryset = queryset.filter(status=status)
         return queryset.order_by('-date', '-time')
 
-
-# ==============================================================================
-# PRACTITIONER CONSULTATIONS (For practitioner dashboard)
-# ==============================================================================
-
 class MyPractitionerConsultationsView(generics.ListAPIView):
-    """GET /consultations/my-practitioner/ - Shows practitioner's consultations"""
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated, IsPractitionerOrAdmin]
 
@@ -244,13 +207,7 @@ class MyPractitionerConsultationsView(generics.ListAPIView):
             queryset = queryset.filter(status=status)
         return queryset.order_by('-date', '-time')
 
-
-# ==============================================================================
-# COMPLETED CONSULTATIONS WITHOUT REVIEWS (For review feature)
-# ==============================================================================
-
 class CompletedConsultationsNoReviewView(generics.ListAPIView):
-    """GET /consultations/completed/no-review/ - Consultations ready for review"""
     serializer_class = ConsultationSerializer
     permission_classes = [IsAuthenticated]
 
@@ -261,20 +218,13 @@ class CompletedConsultationsNoReviewView(generics.ListAPIView):
             review__isnull=True
         ).order_by('-date', '-time')
 
-
-# ==============================================================================
-# DASHBOARD METRICS (For statistics cards)
-# ==============================================================================
-
 class ConsultationMetricsView(APIView):
-    """GET /consultations/metrics/ - Dashboard statistics"""
     permission_classes = [IsAuthenticated]
 
     def get(self, request):
         user = request.user
         
         if hasattr(user, 'practitioner'):
-            # Practitioner metrics
             consultations = Consultation.objects.filter(practitioner__user=user)
             completed = consultations.filter(status='completed')
             
@@ -286,7 +236,6 @@ class ConsultationMetricsView(APIView):
                 'total_earnings': sum(c.price or 500 for c in completed),
             }
         else:
-            # Client metrics
             consultations = Consultation.objects.filter(client=user)
             completed = consultations.filter(status='completed')
             
@@ -300,41 +249,24 @@ class ConsultationMetricsView(APIView):
             }
         
         return Response(metrics)
-    
 
-    #================================================================================================
-    # NOTIFICATION VIEWS
-    #================================================================================================
+# ==================== NOTIFICATION VIEWS ====================
 
 class NotificationListView(generics.ListAPIView):
-    """
-    GET /notifications/
-    Returns all notifications for the current user
-    """
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         return Notification.objects.filter(recipient=self.request.user)
-
 
 class NotificationDetailView(generics.RetrieveAPIView):
-    """
-    GET /notifications/{id}/
-    Returns a specific notification
-    """
     serializer_class = NotificationSerializer
     permission_classes = [permissions.IsAuthenticated]
 
     def get_queryset(self):
         return Notification.objects.filter(recipient=self.request.user)
 
-
 class NotificationMarkReadView(APIView):
-    """
-    POST /notifications/{id}/read/
-    Mark a specific notification as read
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
@@ -346,24 +278,14 @@ class NotificationMarkReadView(APIView):
         notification.mark_as_read()
         return Response({'status': 'marked as read'})
 
-
 class NotificationMarkAllReadView(APIView):
-    """
-    POST /notifications/mark-all-read/
-    Mark all user's notifications as read
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request):
         count = Notification.mark_all_as_read(request.user)
         return Response({'marked_read': count})
 
-
 class NotificationUnreadCountView(APIView):
-    """
-    GET /notifications/unread-count/
-    Returns count of unread notifications
-    """
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):

@@ -8,6 +8,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         fields = ['id', 'role', 'phone']
 
 class RegisterSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(write_only=True, required=True)
     password = serializers.CharField(write_only=True, min_length=8)
     role = serializers.ChoiceField(choices=['client', 'practitioner'], write_only=True)
     phone = serializers.CharField(write_only=True, required=False, allow_blank=True)
@@ -21,11 +22,21 @@ class RegisterSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = [
-            'email', 'first_name', 'last_name', 'password',
-            'role', 'phone', 'bio', 'city', 'hourly_rate', 'years_of_experience'
+            'username',
+            'email', 
+            'first_name', 
+            'last_name', 
+            'password',
+            'role', 
+            'phone', 
+            'bio', 
+            'city', 
+            'hourly_rate', 
+            'years_of_experience'
         ]
 
     def create(self, validated_data):
+        username = validated_data.pop('username')
         role = validated_data.pop('role')
         phone = validated_data.pop('phone', '')
         
@@ -35,7 +46,13 @@ class RegisterSerializer(serializers.ModelSerializer):
         years_of_experience = validated_data.pop('years_of_experience', 0)
 
         with transaction.atomic():
-            user = User.objects.create_user(**validated_data)
+            user = User.objects.create_user(
+                username=username,
+                email=validated_data['email'],
+                password=validated_data['password'],
+                first_name=validated_data.get('first_name', ''),
+                last_name=validated_data.get('last_name', '')
+            )
             
             UserProfile.objects.create(
                 user=user,
@@ -51,7 +68,7 @@ class RegisterSerializer(serializers.ModelSerializer):
                     hourly_rate=hourly_rate,
                     years_of_experience=years_of_experience,
                     currency='KES',
-                    is_verified=False,  # Needs admin approval
+                    is_verified=False,
                     profile_complete=False
                 )
             
@@ -103,10 +120,6 @@ class ReviewSerializer(serializers.ModelSerializer):
         model = Review
         fields = '__all__'
 
-
-#====================================================================================================
-# NOTIFICATION SERIALIZER
-#====================================================================================================
 class NotificationSerializer(serializers.ModelSerializer):
     time_ago = serializers.SerializerMethodField()
     
