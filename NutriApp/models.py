@@ -126,55 +126,144 @@ class Practitioner(TimeStampedModel):
         return f"{self.user.get_full_name()} - {self.city}"
 
 # ==============================================================================
-# PRACTITIONER APPLICATION MODEL - ADD THIS SECTION
+# PRACTITIONER APPLICATION MODEL 
 # ==============================================================================
+
+# Add to your models.py - Enhanced PractitionerApplication
 
 class PractitionerApplication(TimeStampedModel):
     """
-    Model to track practitioner applications for verification
+    Enhanced model to track practitioner applications and registration
     """
     STATUS_CHOICES = [
+        ('draft', 'Draft - Not Submitted'),
         ('pending', 'Pending Review'),
         ('approved', 'Approved'),
         ('rejected', 'Rejected'),
         ('info_needed', 'More Info Needed'),
     ]
     
-    practitioner = models.OneToOneField(Practitioner, on_delete=models.CASCADE, related_name='application')
-    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', db_index=True)
-    submitted_at = models.DateTimeField(auto_now_add=True)
-    reviewed_at = models.DateTimeField(null=True, blank=True)
-    reviewed_by = models.ForeignKey(User, on_delete=models.SET_NULL, null=True, blank=True, related_name='reviewed_applications')
+    # Link to user (for draft state before practitioner is created)
+    user = models.OneToOneField(
+        User, 
+        on_delete=models.CASCADE, 
+        related_name='practitioner_application',
+        null=True, 
+        blank=True
+    )
     
-    # Application details
+    # Link to practitioner (once created)
+    practitioner = models.OneToOneField(
+        Practitioner, 
+        on_delete=models.CASCADE, 
+        related_name='application',
+        null=True, 
+        blank=True
+    )
+    
+    # Application status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', db_index=True)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    reviewed_by = models.ForeignKey(
+        User, 
+        on_delete=models.SET_NULL, 
+        null=True, 
+        blank=True, 
+        related_name='reviewed_applications'
+    )
+    
+    # Personal Information
+    professional_title = models.CharField(max_length=100, blank=True)
+    
+    # Professional Details
     qualifications = models.TextField(help_text="List your qualifications and certifications")
     experience_description = models.TextField(help_text="Describe your relevant experience")
+    specialized_areas = models.CharField(max_length=500, blank=True, help_text="Comma-separated list of specialized areas")
+    
+    # Documents
     id_document = models.FileField(upload_to='applications/id/', null=True, blank=True)
     certification_documents = models.FileField(upload_to='applications/certifications/', null=True, blank=True)
+    profile_photo = models.ImageField(upload_to='applications/photos/', null=True, blank=True)
+    
+    # Professional Links
+    linkedin_url = models.URLField(blank=True)
+    website_url = models.URLField(blank=True)
     
     # Admin notes
     admin_notes = models.TextField(blank=True, null=True, help_text="Internal notes for admin")
     rejection_reason = models.TextField(blank=True, null=True, help_text="Reason if rejected")
     
+    # Consent
+    terms_accepted = models.BooleanField(default=False)
+    data_consent_given = models.BooleanField(default=False)
+    
     class Meta:
-        ordering = ['-submitted_at']
+        ordering = ['-created_at']
         indexes = [
-            models.Index(fields=['status', 'submitted_at']),
+            models.Index(fields=['status', 'created_at']),
+            models.Index(fields=['user', 'status']),
         ]
     
     def __str__(self):
-        return f"Application for {self.practitioner.user.get_full_name()} - {self.status}"
+        if self.practitioner:
+            return f"Application for {self.practitioner.user.get_full_name()} - {self.status}"
+        elif self.user:
+            return f"Application for {self.user.get_full_name()} - {self.status}"
+        return f"Application #{self.id} - {self.status}"
+    
+    def submit(self):
+        """Submit the application for review"""
+        self.status = 'pending'
+        self.submitted_at = timezone.now()
+        self.save()
+        
+        # Create notification for admins
+        Notification.objects.create(
+            recipient=User.objects.filter(is_staff=True).first(),  # Notify first admin
+            notification_type='SYSTEM',
+            title='New Practitioner Application',
+            message=f'New application submitted by {self.user.get_full_name()}'
+        )
     
     def approve(self, admin_user):
-        """Approve the application and verify the practitioner"""
+        """Approve the application and create/verify the practitioner"""
         self.status = 'approved'
         self.reviewed_at = timezone.now()
         self.reviewed_by = admin_user
         self.save()
         
-        # Verify the practitioner
-        self.practitioner.is_verified = True
-        self.practitioner.save()
+        # If practitioner doesn't exist yet, create one
+        if not self.practitioner and self.user:
+            practitioner = Practitioner.objects.create(
+                user=self.user,
+                bio=self.experience_description,
+                city='',  # To be filled later
+                hourly_rate=0.00,
+                years_of_experience=0,
+                currency='KES',
+                is_verified=True,
+                profile_complete=False
+            )
+            self.practitioner = practitioner
+            self.save()
+            
+            # Update user profile role if needed
+            if hasattr(self.user, 'profile'):
+                self.user.profile.role = 'practitioner'
+                self.user.profile.save()
+        elif self.practitioner:
+            # Verify existing practitioner
+            self.practitioner.is_verified = True
+            self.practitioner.save()
+        
+        # Send notification to applicant
+        Notification.objects.create(
+            recipient=self.user or self.practitioner.user,
+            notification_type='PRACTITIONER_VERIFIED',
+            title='Application Approved!',
+            message='Congratulations! Your practitioner application has been approved.'
+        )
     
     def reject(self, admin_user, reason):
         """Reject the application"""
@@ -183,17 +272,32 @@ class PractitionerApplication(TimeStampedModel):
         self.reviewed_by = admin_user
         self.rejection_reason = reason
         self.save()
+        
+        # Notify applicant
+        Notification.objects.create(
+            recipient=self.user or self.practitioner.user,
+            notification_type='SYSTEM',
+            title='Application Update',
+            message=f'Your application status: Rejected. Reason: {reason}'
+        )
     
     def request_more_info(self, admin_user, notes):
-        """Request more information from the practitioner"""
+        """Request more information from the applicant"""
         self.status = 'info_needed'
         self.reviewed_at = timezone.now()
         self.reviewed_by = admin_user
         self.admin_notes = notes
         self.save()
-
+        
+        # Notify applicant
+        Notification.objects.create(
+            recipient=self.user or self.practitioner.user,
+            notification_type='SYSTEM',
+            title='Additional Information Required',
+            message=f'Please provide more information: {notes}'
+        )
 # ==============================================================================
-# END OF PRACTITIONER APPLICATION MODEL
+# PRACTITIONER AVAILABILITY MODEL
 # ==============================================================================
 
 # Availability Model
