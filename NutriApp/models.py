@@ -4,7 +4,7 @@ from django.contrib.auth.base_user import BaseUserManager
 from django.core.validators import MinValueValidator, MaxValueValidator, RegexValidator
 from django.core.exceptions import ValidationError
 from datetime import time
-from django.utils import timezone  # Add this import for timezone.now()
+from django.utils import timezone
 
 # Abstract base class for timestamped models
 class TimeStampedModel(models.Model):
@@ -91,7 +91,7 @@ class Specialty(models.Model):
     def __str__(self):
         return self.name
 
-# Practitioner Model (SIMPLIFIED)
+# Practitioner Model
 class Practitioner(TimeStampedModel):
     CURRENCY_CHOICES = [
         ('KES', 'Kenyan Shilling'),
@@ -112,7 +112,7 @@ class Practitioner(TimeStampedModel):
     bio = models.TextField(blank=True, null=True)
     city = models.CharField(max_length=100, db_index=True, blank=True, default='')
     years_of_experience = models.PositiveIntegerField(default=0, blank=True)
-    is_verified = models.BooleanField(default=False, db_index=True)  # Admin approval
+    is_verified = models.BooleanField(default=False, db_index=True)
     profile_complete = models.BooleanField(default=False)
 
     class Meta:
@@ -126,14 +126,12 @@ class Practitioner(TimeStampedModel):
         return f"{self.user.get_full_name()} - {self.city}"
 
 # ==============================================================================
-# PRACTITIONER APPLICATION MODEL 
+# PRACTITIONER APPLICATION MODEL - FIXED
 # ==============================================================================
-
-# Add to your models.py - Enhanced PractitionerApplication
 
 class PractitionerApplication(TimeStampedModel):
     """
-    Enhanced model to track practitioner applications and registration
+    Model to track practitioner applications for verification
     """
     STATUS_CHOICES = [
         ('draft', 'Draft - Not Submitted'),
@@ -143,7 +141,6 @@ class PractitionerApplication(TimeStampedModel):
         ('info_needed', 'More Info Needed'),
     ]
     
-    # Link to user (for draft state before practitioner is created)
     user = models.OneToOneField(
         User, 
         on_delete=models.CASCADE, 
@@ -152,7 +149,6 @@ class PractitionerApplication(TimeStampedModel):
         blank=True
     )
     
-    # Link to practitioner (once created)
     practitioner = models.OneToOneField(
         Practitioner, 
         on_delete=models.CASCADE, 
@@ -161,7 +157,6 @@ class PractitionerApplication(TimeStampedModel):
         blank=True
     )
     
-    # Application status
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft', db_index=True)
     submitted_at = models.DateTimeField(null=True, blank=True)
     reviewed_at = models.DateTimeField(null=True, blank=True)
@@ -174,12 +169,20 @@ class PractitionerApplication(TimeStampedModel):
     )
     
     # Personal Information
-    professional_title = models.CharField(max_length=100, blank=True)
+    professional_title = models.CharField(max_length=100, blank=True, default='')
     
-    # Professional Details
-    qualifications = models.TextField(help_text="List your qualifications and certifications")
-    experience_description = models.TextField(help_text="Describe your relevant experience")
-    specialized_areas = models.CharField(max_length=500, blank=True, help_text="Comma-separated list of specialized areas")
+    # Professional Details - FIXED: Added blank=True, default=''
+    qualifications = models.TextField(
+        help_text="List your qualifications and certifications",
+        blank=True,
+        default=''
+    )
+    experience_description = models.TextField(
+        help_text="Describe your relevant experience",
+        blank=True,
+        default=''
+    )
+    specialized_areas = models.CharField(max_length=500, blank=True, default='')
     
     # Documents
     id_document = models.FileField(upload_to='applications/id/', null=True, blank=True)
@@ -187,14 +190,14 @@ class PractitionerApplication(TimeStampedModel):
     profile_photo = models.ImageField(upload_to='applications/photos/', null=True, blank=True)
     
     # Professional Links
-    linkedin_url = models.URLField(blank=True)
-    website_url = models.URLField(blank=True)
+    linkedin_url = models.URLField(blank=True, default='')
+    website_url = models.URLField(blank=True, default='')
     
     # Admin notes
-    admin_notes = models.TextField(blank=True, null=True, help_text="Internal notes for admin")
-    rejection_reason = models.TextField(blank=True, null=True, help_text="Reason if rejected")
+    admin_notes = models.TextField(blank=True, null=True)
+    rejection_reason = models.TextField(blank=True, null=True)
     
-    # Consent
+    # Consent - FIXED: Added default=False
     terms_accepted = models.BooleanField(default=False)
     data_consent_given = models.BooleanField(default=False)
     
@@ -213,32 +216,21 @@ class PractitionerApplication(TimeStampedModel):
         return f"Application #{self.id} - {self.status}"
     
     def submit(self):
-        """Submit the application for review"""
         self.status = 'pending'
         self.submitted_at = timezone.now()
         self.save()
-        
-        # Create notification for admins
-        Notification.objects.create(
-            recipient=User.objects.filter(is_staff=True).first(),  # Notify first admin
-            notification_type='SYSTEM',
-            title='New Practitioner Application',
-            message=f'New application submitted by {self.user.get_full_name()}'
-        )
     
     def approve(self, admin_user):
-        """Approve the application and create/verify the practitioner"""
         self.status = 'approved'
         self.reviewed_at = timezone.now()
         self.reviewed_by = admin_user
         self.save()
         
-        # If practitioner doesn't exist yet, create one
         if not self.practitioner and self.user:
             practitioner = Practitioner.objects.create(
                 user=self.user,
                 bio=self.experience_description,
-                city='',  # To be filled later
+                city='',
                 hourly_rate=0.00,
                 years_of_experience=0,
                 currency='KES',
@@ -248,57 +240,26 @@ class PractitionerApplication(TimeStampedModel):
             self.practitioner = practitioner
             self.save()
             
-            # Update user profile role if needed
             if hasattr(self.user, 'profile'):
                 self.user.profile.role = 'practitioner'
                 self.user.profile.save()
         elif self.practitioner:
-            # Verify existing practitioner
             self.practitioner.is_verified = True
             self.practitioner.save()
-        
-        # Send notification to applicant
-        Notification.objects.create(
-            recipient=self.user or self.practitioner.user,
-            notification_type='PRACTITIONER_VERIFIED',
-            title='Application Approved!',
-            message='Congratulations! Your practitioner application has been approved.'
-        )
     
     def reject(self, admin_user, reason):
-        """Reject the application"""
         self.status = 'rejected'
         self.reviewed_at = timezone.now()
         self.reviewed_by = admin_user
         self.rejection_reason = reason
         self.save()
-        
-        # Notify applicant
-        Notification.objects.create(
-            recipient=self.user or self.practitioner.user,
-            notification_type='SYSTEM',
-            title='Application Update',
-            message=f'Your application status: Rejected. Reason: {reason}'
-        )
     
     def request_more_info(self, admin_user, notes):
-        """Request more information from the applicant"""
         self.status = 'info_needed'
         self.reviewed_at = timezone.now()
         self.reviewed_by = admin_user
         self.admin_notes = notes
         self.save()
-        
-        # Notify applicant
-        Notification.objects.create(
-            recipient=self.user or self.practitioner.user,
-            notification_type='SYSTEM',
-            title='Additional Information Required',
-            message=f'Please provide more information: {notes}'
-        )
-# ==============================================================================
-# PRACTITIONER AVAILABILITY MODEL
-# ==============================================================================
 
 # Availability Model
 class Availability(TimeStampedModel):
@@ -368,13 +329,9 @@ class Review(TimeStampedModel):
     
     def __str__(self):
         return f"Review by {self.reviewer.email} - {self.rating}⭐"
-#=====================================================================================================
-# NOTIFICATION MODEL
-#=====================================================================================================
+
+# Notification Model
 class Notification(TimeStampedModel):
-    """
-    Notification model for user alerts and updates
-    """
     class NotificationType(models.TextChoices):
         CONSULTATION_REQUEST = 'consultation_request', 'New Consultation Request'
         CONSULTATION_CONFIRMED = 'consultation_confirmed', 'Consultation Confirmed'
@@ -398,7 +355,7 @@ class Notification(TimeStampedModel):
     )
     title = models.CharField(max_length=255)
     message = models.TextField()
-    data = models.JSONField(default=dict, blank=True)  # Store additional data like consultation_id, review_id
+    data = models.JSONField(default=dict, blank=True)
     is_read = models.BooleanField(default=False, db_index=True)
     read_at = models.DateTimeField(null=True, blank=True)
     
@@ -413,7 +370,6 @@ class Notification(TimeStampedModel):
         return f"{self.recipient.email} - {self.title[:30]}"
     
     def mark_as_read(self):
-        """Mark notification as read"""
         if not self.is_read:
             self.is_read = True
             self.read_at = timezone.now()
@@ -421,7 +377,6 @@ class Notification(TimeStampedModel):
     
     @classmethod
     def mark_all_as_read(cls, user):
-        """Mark all unread notifications as read for a user"""
         return cls.objects.filter(recipient=user, is_read=False).update(
             is_read=True,
             read_at=timezone.now(),
