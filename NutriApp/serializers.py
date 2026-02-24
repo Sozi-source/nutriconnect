@@ -336,11 +336,12 @@ class PractitionerApplicationCreateSerializer(serializers.ModelSerializer):
     
     class Meta:
         model = PractitionerApplication
-        exclude = [
-            'practitioner', 'status', 'reviewed_by', 
-            'reviewed_at', 'admin_notes', 'rejection_reason',
-            'submitted_at', 'created_at', 'updated_at'
-        ]
+        exclude = ['practitioner', 'status', 'reviewed_by', 'reviewed_at', 'admin_notes', 'rejection_reason']
+        extra_kwargs = {
+            'id_document': {'required': False},
+            'certification_documents': {'required': False},
+            'profile_photo': {'required': False},
+        }
     
     def validate_terms_accepted(self, value):
         if not value:
