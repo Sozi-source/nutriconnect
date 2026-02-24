@@ -1,7 +1,7 @@
 from rest_framework import serializers
 from .models import (
     User, UserProfile, Specialty, Practitioner, 
-    Availability, Consultation, Review, Notification
+    Availability, Consultation, Review, Notification, PractitionerApplication
 )
 from django.db import transaction
 
@@ -14,6 +14,7 @@ class UserProfileSerializer(serializers.ModelSerializer):
         model = UserProfile
         fields = ['id', 'role', 'phone']
 
+
 # ==============================================================================
 # USER SERIALIZERS
 # ==============================================================================
@@ -24,6 +25,7 @@ class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
         fields = ['id', 'email', 'first_name', 'last_name', 'profile']
+
 
 # ==============================================================================
 # AUTHENTICATION SERIALIZERS
@@ -97,6 +99,7 @@ class RegisterSerializer(serializers.ModelSerializer):
             
             return user
 
+
 # ==============================================================================
 # SPECIALTY SERIALIZERS
 # ==============================================================================
@@ -105,6 +108,7 @@ class SpecialtySerializer(serializers.ModelSerializer):
     class Meta:
         model = Specialty
         fields = ['id', 'name', 'description']
+
 
 # ==============================================================================
 # PRACTITIONER SERIALIZERS
@@ -129,17 +133,22 @@ class PractitionerSerializer(serializers.ModelSerializer):
     def get_full_name(self, obj):
         return obj.user.get_full_name()
 
+
 class PractitionerDetailSerializer(PractitionerSerializer):
+    """Extended practitioner details"""
     class Meta(PractitionerSerializer.Meta):
-        fields = PractitionerSerializer.Meta.fields  # Removed application_status
+        fields = PractitionerSerializer.Meta.fields
+
 
 class PractitionerUpdateSerializer(serializers.ModelSerializer):
+    """Update practitioner profile"""
     class Meta:
         model = Practitioner
         fields = [
             'bio', 'city', 'hourly_rate', 'currency',
             'years_of_experience', 'specialties', 'profile_complete'
         ]
+
 
 # ==============================================================================
 # AVAILABILITY SERIALIZERS
@@ -153,13 +162,16 @@ class AvailabilitySerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['created_at', 'updated_at']
 
+
 class AvailabilityCreateSerializer(serializers.ModelSerializer):
+    """Create availability slots"""
     class Meta:
         model = Availability
         fields = [
             'recurrence_type', 'day_of_week', 'specific_date',
             'start_time', 'end_time', 'is_available', 'notes'
         ]
+
 
 # ==============================================================================
 # CONSULTATION SERIALIZERS
@@ -177,17 +189,22 @@ class ConsultationSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['created_at', 'updated_at', 'version']
 
+
 class ConsultationCreateSerializer(serializers.ModelSerializer):
+    """Create a new consultation"""
     class Meta:
         model = Consultation
         fields = [
             'practitioner', 'date', 'time', 'duration_minutes', 'client_notes'
         ]
 
+
 class ConsultationUpdateSerializer(serializers.ModelSerializer):
+    """Update consultation status/notes"""
     class Meta:
         model = Consultation
         fields = ['status', 'practitioner_notes']
+
 
 # ==============================================================================
 # REVIEW SERIALIZERS
@@ -201,7 +218,9 @@ class ReviewSerializer(serializers.ModelSerializer):
         fields = '__all__'
         read_only_fields = ['created_at', 'updated_at']
 
+
 class ReviewCreateSerializer(serializers.ModelSerializer):
+    """Create a new review"""
     class Meta:
         model = Review
         fields = ['consultation', 'rating', 'comment']
@@ -217,6 +236,7 @@ class ReviewCreateSerializer(serializers.ModelSerializer):
                 "This consultation already has a review"
             )
         return data
+
 
 # ==============================================================================
 # NOTIFICATION SERIALIZERS
@@ -239,18 +259,20 @@ class NotificationSerializer(serializers.ModelSerializer):
 
 
 class NotificationMarkReadSerializer(serializers.Serializer):
-    """Serializer for marking notifications as read"""
+    """Mark notifications as read"""
     notification_ids = serializers.ListField(
         child=serializers.IntegerField(),
         required=False
     )
     mark_all = serializers.BooleanField(default=False)
 
+
 # ==============================================================================
 # DASHBOARD STATS SERIALIZERS
 # ==============================================================================
 
 class ClientDashboardStatsSerializer(serializers.Serializer):
+    """Client dashboard statistics"""
     total_consultations = serializers.IntegerField()
     completed_consultations = serializers.IntegerField()
     upcoming_consultations = serializers.IntegerField()
@@ -258,10 +280,189 @@ class ClientDashboardStatsSerializer(serializers.Serializer):
     total_spent = serializers.DecimalField(max_digits=10, decimal_places=2)
     pending_reviews = serializers.IntegerField()
 
+
 class PractitionerDashboardStatsSerializer(serializers.Serializer):
+    """Practitioner dashboard statistics"""
     total_consultations = serializers.IntegerField()
     completed_consultations = serializers.IntegerField()
     upcoming_consultations = serializers.IntegerField()
     cancelled_consultations = serializers.IntegerField()
     total_earnings = serializers.DecimalField(max_digits=10, decimal_places=2)
     average_rating = serializers.FloatField()
+
+
+# ==============================================================================
+# PRACTITIONER APPLICATION SERIALIZERS
+# ==============================================================================
+
+class PractitionerApplicationSerializer(serializers.ModelSerializer):
+    """Full application details serializer"""
+    practitioner_name = serializers.CharField(
+        source='practitioner.user.get_full_name', 
+        read_only=True
+    )
+    practitioner_email = serializers.EmailField(
+        source='practitioner.user.email', 
+        read_only=True
+    )
+    reviewed_by_name = serializers.CharField(
+        source='reviewed_by.get_full_name', 
+        read_only=True
+    )
+    document_urls = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = PractitionerApplication
+        fields = '__all__'
+        read_only_fields = [
+            'practitioner', 'status', 'reviewed_by', 
+            'reviewed_at', 'submitted_at', 'created_at', 'updated_at'
+        ]
+    
+    def get_document_urls(self, obj):
+        """Get URLs for uploaded documents"""
+        urls = {}
+        if obj.id_document:
+            urls['id_document'] = obj.id_document.url
+        if obj.certification_documents:
+            urls['certification_documents'] = obj.certification_documents.url
+        if obj.profile_photo:
+            urls['profile_photo'] = obj.profile_photo.url
+        return urls
+
+
+class PractitionerApplicationCreateSerializer(serializers.ModelSerializer):
+    """Create or update application serializer"""
+    
+    class Meta:
+        model = PractitionerApplication
+        exclude = [
+            'practitioner', 'status', 'reviewed_by', 
+            'reviewed_at', 'admin_notes', 'rejection_reason',
+            'submitted_at', 'created_at', 'updated_at'
+        ]
+    
+    def validate_terms_accepted(self, value):
+        if not value:
+            raise serializers.ValidationError("You must accept the terms and conditions")
+        return value
+    
+    def validate_data_consent_given(self, value):
+        if not value:
+            raise serializers.ValidationError("You must give consent for data processing")
+        return value
+    
+    def validate_qualifications(self, value):
+        if not value or len(value.strip()) < 10:
+            raise serializers.ValidationError("Please provide detailed qualifications")
+        return value
+    
+    def validate_experience_description(self, value):
+        if not value or len(value.strip()) < 20:
+            raise serializers.ValidationError("Please provide a detailed experience description")
+        return value
+
+
+class PractitionerApplicationListSerializer(serializers.ModelSerializer):
+    """Lightweight list serializer for applications"""
+    practitioner_name = serializers.CharField(
+        source='practitioner.user.get_full_name', 
+        read_only=True
+    )
+    practitioner_email = serializers.EmailField(
+        source='practitioner.user.email', 
+        read_only=True
+    )
+    
+    class Meta:
+        model = PractitionerApplication
+        fields = [
+            'id', 
+            'practitioner_name', 
+            'practitioner_email',
+            'professional_title', 
+            'status', 
+            'created_at', 
+            'submitted_at'
+        ]
+
+
+class PractitionerApplicationStatusSerializer(serializers.Serializer):
+    """Simple status check serializer"""
+    has_application = serializers.BooleanField()
+    status = serializers.CharField(required=False)
+    professional_title = serializers.CharField(required=False)
+    submitted_at = serializers.DateTimeField(required=False)
+    can_edit = serializers.BooleanField(required=False)
+
+
+# ==============================================================================
+# ADMIN APPLICATION ACTION SERIALIZERS
+# ==============================================================================
+
+class AdminApplicationActionSerializer(serializers.Serializer):
+    """Admin approve/reject actions"""
+    
+    ACTION_CHOICES = [
+        ('approve', '✅ Approve'),
+        ('reject', '❌ Reject'),
+    ]
+    
+    action = serializers.ChoiceField(choices=ACTION_CHOICES)
+    reason = serializers.CharField(
+        required=False, 
+        allow_blank=True,
+        help_text="Rejection reason (required for reject)"
+    )
+    admin_notes = serializers.CharField(
+        required=False,
+        allow_blank=True,
+        help_text="Internal admin notes"
+    )
+    
+    def validate(self, data):
+        if data['action'] == 'reject' and not data.get('reason'):
+            raise serializers.ValidationError({
+                'reason': 'Rejection reason is required when rejecting an application'
+            })
+        return data
+
+
+class AdminApplicationReviewSerializer(serializers.ModelSerializer):
+    """Admin review notes serializer"""
+    
+    class Meta:
+        model = PractitionerApplication
+        fields = ['admin_notes', 'rejection_reason']
+
+
+class AdminApplicationFilterSerializer(serializers.Serializer):
+    """Filter applications by status"""
+    status = serializers.ChoiceField(
+        choices=[
+            ('draft', 'Draft'),
+            ('pending', 'Pending Review'),
+            ('approved', 'Approved'),
+            ('rejected', 'Rejected'),
+            ('info_needed', 'Info Needed'),
+        ],
+        required=False
+    )
+    date_from = serializers.DateField(required=False)
+    date_to = serializers.DateField(required=False)
+    search = serializers.CharField(required=False)
+
+
+# ==============================================================================
+# APPLICATION STATS SERIALIZERS
+# ==============================================================================
+
+class ApplicationStatsSerializer(serializers.Serializer):
+    """Application statistics for admin dashboard"""
+    total = serializers.IntegerField()
+    draft = serializers.IntegerField()
+    pending = serializers.IntegerField()
+    approved = serializers.IntegerField()
+    rejected = serializers.IntegerField()
+    info_needed = serializers.IntegerField()
+    by_status = serializers.DictField(child=serializers.IntegerField())

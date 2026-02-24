@@ -39,10 +39,16 @@ def api_root(request):
             "Notifications": f"{base_url}/notifications/",
             "Notification Unread Count": f"{base_url}/notifications/unread-count/",
             
+            # Practitioner Applications
+            "My Application": f"{base_url}/practitioners/application/me/",
+            "Create Application": f"{base_url}/practitioners/application/create/",
+            "Application Status": f"{base_url}/practitioners/application/status/",
+            
             # Admin
             "Admin Pending Practitioners": f"{base_url}/admin/practitioners/pending/",
             "Admin Approve Practitioner": f"{base_url}/admin/practitioners/<id>/approve/",
             "Admin Reject Practitioner": f"{base_url}/admin/practitioners/<id>/reject/",
+            "Admin Applications": f"{base_url}/admin/applications/",
         }
     })
 
@@ -65,6 +71,12 @@ practitioner_patterns = [
     
     # Practitioner reviews
     path('<int:pk>/reviews/', views.PractitionerReviewsView.as_view(), name='practitioner-reviews'),
+    
+    # ========== PRACTITIONER APPLICATION URLS (nested under practitioners) ==========
+    path('application/create/', views.PractitionerApplicationCreateView.as_view(), name='practitioner-application-create'),
+    path('application/me/', views.PractitionerApplicationDetailView.as_view(), name='practitioner-application-detail'),
+    path('application/submit/', views.PractitionerApplicationSubmitView.as_view(), name='practitioner-application-submit'),
+    path('application/status/', views.PractitionerApplicationStatusView.as_view(), name='practitioner-application-status'),
 ]
 
 
@@ -126,6 +138,11 @@ admin_patterns = [
     path('practitioners/pending/', views.AdminPendingPractitionersView.as_view(), name='admin-pending'),
     path('practitioners/<int:pk>/approve/', views.AdminApprovePractitionerView.as_view(), name='admin-approve'),
     path('practitioners/<int:pk>/reject/', views.AdminRejectPractitionerView.as_view(), name='admin-reject'),
+    
+    # ========== ADMIN APPLICATION URLS ==========
+    path('applications/', views.AdminApplicationListView.as_view(), name='admin-applications'),
+    path('applications/<int:pk>/', views.AdminApplicationDetailView.as_view(), name='admin-application-detail'),
+    path('applications/<int:pk>/action/', views.AdminApplicationActionView.as_view(), name='admin-application-action'),
 ]
 
 
@@ -148,7 +165,7 @@ urlpatterns = [
     # Specialties
     path('specialties/', views.SpecialtyListView.as_view(), name='specialty-list'),
     
-    # Practitioners (includes all practitioner patterns)
+    # Practitioners (includes all practitioner patterns including applications)
     path('practitioners/', include(practitioner_patterns)),
     
     # Availability
@@ -194,6 +211,10 @@ def api_docs(request):
                 "Practitioner Detail": {"method": "GET", "url": "/practitioners/{id}/", "description": "Get practitioner details"},
                 "My Profile": {"method": "GET", "url": "/practitioners/me/", "description": "Get own practitioner profile"},
                 "Update Profile": {"method": "PUT", "url": "/practitioners/me/", "description": "Update own profile"},
+                "Create Application": {"method": "POST", "url": "/practitioners/application/create/", "description": "Create practitioner application"},
+                "My Application": {"method": "GET", "url": "/practitioners/application/me/", "description": "Get your application"},
+                "Submit Application": {"method": "POST", "url": "/practitioners/application/submit/", "description": "Submit for review"},
+                "Application Status": {"method": "GET", "url": "/practitioners/application/status/", "description": "Check application status"},
             },
             "Consultations": {
                 "List": {"method": "GET", "url": "/consultations/", "description": "Get your consultations"},
@@ -230,6 +251,9 @@ def api_docs(request):
                 "Pending Practitioners": {"method": "GET", "url": "/admin/practitioners/pending/", "description": "List unverified practitioners"},
                 "Approve Practitioner": {"method": "PATCH", "url": "/admin/practitioners/{id}/approve/", "description": "Verify a practitioner"},
                 "Reject Practitioner": {"method": "POST", "url": "/admin/practitioners/{id}/reject/", "description": "Reject a practitioner"},
+                "List Applications": {"method": "GET", "url": "/admin/applications/", "description": "List all applications"},
+                "Application Detail": {"method": "GET", "url": "/admin/applications/{id}/", "description": "View application details"},
+                "Application Action": {"method": "POST", "url": "/admin/applications/{id}/action/", "description": "Approve/reject application"},
             }
         }
     }

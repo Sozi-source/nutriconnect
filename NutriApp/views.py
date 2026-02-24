@@ -12,7 +12,7 @@ from django.utils import timezone
 
 from .models import (
     User, Practitioner, Specialty, Availability, 
-    Consultation, Review, Notification
+    Consultation, Review, Notification, PractitionerApplication
 )
 from .serializers import (
     # Auth serializers
@@ -39,7 +39,18 @@ from .serializers import (
     NotificationSerializer, NotificationMarkReadSerializer,
     
     # Dashboard serializers
-    ClientDashboardStatsSerializer, PractitionerDashboardStatsSerializer
+    ClientDashboardStatsSerializer, PractitionerDashboardStatsSerializer,
+
+    # Practitioner Application serializers
+    PractitionerApplicationSerializer, 
+    PractitionerApplicationCreateSerializer,
+    PractitionerApplicationListSerializer,
+    PractitionerApplicationStatusSerializer,
+    
+    # Admin action serializers
+    AdminApplicationActionSerializer,
+    AdminApplicationReviewSerializer,
+    ApplicationStatsSerializer,
 )
 from .permissions import (
     IsClientUser, IsPractitionerUser, IsOwnerOrAdmin,
@@ -97,6 +108,13 @@ class LoginView(APIView):
             if hasattr(user, 'profile'):
                 role = user.profile.role
             
+            # Check for application status
+            application_status = None
+            has_application = False
+            if hasattr(user, 'practitioner') and hasattr(user.practitioner, 'application'):
+                has_application = True
+                application_status = user.practitioner.application.status
+            
             return Response({
                 'token': token.key,
                 'user': {
@@ -108,6 +126,8 @@ class LoginView(APIView):
                     'is_practitioner': hasattr(user, 'practitioner'),
                     'is_verified': hasattr(user, 'practitioner') and user.practitioner.is_verified,
                     'is_staff': user.is_staff,
+                    'has_application': has_application,
+                    'application_status': application_status,
                 }
             })
         else:
@@ -281,6 +301,111 @@ class PractitionerAvailabilityView(generics.ListAPIView):
             practitioner_id=practitioner_id,
             is_available=True
         )
+
+
+# ==============================================================================
+# PRACTITIONER APPLICATION VIEWS
+# ==============================================================================
+
+class PractitionerApplicationCreateView(APIView):
+    """Create a new practitioner application"""
+    permission_classes = [IsAuthenticated, IsPractitionerUser]
+    
+    def post(self, request):
+        # Check if user has practitioner profile
+        if not hasattr(request.user, 'practitioner'):
+            return Response(
+                {'error': 'You must be registered as a practitioner first'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if application already exists
+        if hasattr(request.user.practitioner, 'application'):
+            return Response(
+                {'error': 'You already have an application'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        serializer = PractitionerApplicationCreateSerializer(data=request.data)
+        if serializer.is_valid():
+            application = serializer.save(
+                practitioner=request.user.practitioner,
+                status='draft'
+            )
+            return Response({
+                'message': 'Application created successfully',
+                'id': application.id,
+                'status': 'draft'
+            }, status=status.HTTP_201_CREATED)
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class PractitionerApplicationDetailView(generics.RetrieveUpdateAPIView):
+    """Get or update user's application"""
+    permission_classes = [IsAuthenticated, IsPractitionerUser]
+    
+    def get_object(self):
+        return get_object_or_404(
+            PractitionerApplication, 
+            practitioner__user=self.request.user
+        )
+    
+    def get_serializer_class(self):
+        if self.request.method in ['PUT', 'PATCH']:
+            return PractitionerApplicationCreateSerializer
+        return PractitionerApplicationSerializer
+
+
+class PractitionerApplicationSubmitView(APIView):
+    """Submit application for review"""
+    permission_classes = [IsAuthenticated, IsPractitionerUser]
+    
+    def post(self, request):
+        application = get_object_or_404(
+            PractitionerApplication,
+            practitioner__user=request.user,
+            status='draft'
+        )
+        
+        # Validate required fields
+        if not application.qualifications:
+            return Response(
+                {'error': 'Qualifications are required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not application.experience_description:
+            return Response(
+                {'error': 'Experience description is required'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        application.submit()
+        
+        return Response({
+            'message': 'Application submitted for review',
+            'status': 'pending'
+        })
+
+
+class PractitionerApplicationStatusView(APIView):
+    """Check application status"""
+    permission_classes = [IsAuthenticated, IsPractitionerUser]
+    
+    def get(self, request):
+        if hasattr(request.user, 'practitioner') and hasattr(request.user.practitioner, 'application'):
+            app = request.user.practitioner.application
+            return Response({
+                'has_application': True,
+                'status': app.status,
+                'professional_title': app.professional_title,
+                'submitted_at': app.submitted_at,
+                'can_edit': app.status in ['draft', 'info_needed']
+            })
+        return Response({
+            'has_application': False
+        })
 
 
 # ==============================================================================
@@ -561,7 +686,7 @@ class ConsultationMetricsView(APIView):
 
 
 # ==============================================================================
-# ADMIN VIEWS
+# ADMIN PRACTITIONER MANAGEMENT VIEWS
 # ==============================================================================
 
 class AdminPendingPractitionersView(generics.ListAPIView):
@@ -616,3 +741,91 @@ class AdminRejectPractitionerView(APIView):
         )
         
         return Response({'message': 'Practitioner rejected'})
+
+
+# ==============================================================================
+# ADMIN APPLICATION MANAGEMENT VIEWS
+# ==============================================================================
+
+class AdminApplicationListView(generics.ListAPIView):
+    """Admin: List all applications"""
+    serializer_class = PractitionerApplicationListSerializer
+    permission_classes = [IsAdminUser]
+    
+    def get_queryset(self):
+        queryset = PractitionerApplication.objects.all()
+        status = self.request.query_params.get('status')
+        if status:
+            queryset = queryset.filter(status=status)
+        return queryset.order_by('-created_at')
+
+
+class AdminApplicationDetailView(generics.RetrieveAPIView):
+    """Admin: View full application details"""
+    serializer_class = PractitionerApplicationSerializer
+    permission_classes = [IsAdminUser]
+    queryset = PractitionerApplication.objects.all()
+
+
+class AdminApplicationActionView(APIView):
+    """Admin: Approve or reject application"""
+    permission_classes = [IsAdminUser]
+    
+    def post(self, request, pk):
+        application = get_object_or_404(PractitionerApplication, pk=pk)
+        serializer = AdminApplicationActionSerializer(data=request.data)
+        
+        if serializer.is_valid():
+            action = serializer.validated_data['action']
+            
+            if action == 'approve':
+                application.approve(request.user)
+                return Response({
+                    'message': 'Application approved',
+                    'status': 'approved'
+                })
+            else:  # reject
+                reason = serializer.validated_data.get('reason', '')
+                application.reject(request.user, reason)
+                return Response({
+                    'message': 'Application rejected',
+                    'status': 'rejected',
+                    'reason': reason
+                })
+        
+        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+class AdminApplicationStatsView(APIView):
+    """Admin: Get application statistics"""
+    permission_classes = [IsAdminUser]
+    
+    def get(self, request):
+        from django.db.models import Count
+        
+        total = PractitionerApplication.objects.count()
+        draft = PractitionerApplication.objects.filter(status='draft').count()
+        pending = PractitionerApplication.objects.filter(status='pending').count()
+        approved = PractitionerApplication.objects.filter(status='approved').count()
+        rejected = PractitionerApplication.objects.filter(status='rejected').count()
+        info_needed = PractitionerApplication.objects.filter(status='info_needed').count()
+        
+        by_status = dict(
+            PractitionerApplication.objects
+            .values('status')
+            .annotate(count=Count('id'))
+            .values_list('status', 'count')
+        )
+        
+        stats = {
+            'total': total,
+            'draft': draft,
+            'pending': pending,
+            'approved': approved,
+            'rejected': rejected,
+            'info_needed': info_needed,
+            'by_status': by_status,
+        }
+        
+        serializer = ApplicationStatsSerializer(stats)
+        return Response(serializer.data)

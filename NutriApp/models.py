@@ -247,3 +247,94 @@ class Notification(TimeStampedModel):
             read_at=timezone.now(),
             updated_at=timezone.now()
         )
+
+#==========================================================================================================
+# PRACTITIONER APPLICATION MODEL
+#==========================================================================================================
+class PractitionerApplication(TimeStampedModel):
+    """Application for existing practitioners to get verified"""
+    
+    STATUS_CHOICES = [
+        ('draft', 'Draft'),
+        ('pending', 'Pending Review'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected'),
+    ]
+    
+    practitioner = models.OneToOneField(
+        Practitioner, 
+        on_delete=models.CASCADE,
+        related_name='application'
+    )
+    
+    # Application fields from your screenshot
+    professional_title = models.CharField(max_length=200)
+    qualifications = models.TextField(help_text="List your qualifications and certifications")
+    experience_description = models.TextField(help_text="Describe your relevant experience")
+    specialized_areas = models.CharField(max_length=500, blank=True)
+    
+    # Documents
+    id_document = models.FileField(upload_to='applications/ids/')
+    certification_documents = models.FileField(upload_to='applications/certifications/')
+    profile_photo = models.ImageField(upload_to='applications/photos/')
+    
+    # Online presence
+    linkedin_url = models.URLField(blank=True)
+    website_url = models.URLField(blank=True)
+    
+    # Status
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='draft')
+    admin_notes = models.TextField(blank=True)
+    rejection_reason = models.TextField(blank=True)
+    reviewed_by = models.ForeignKey(
+        User, on_delete=models.SET_NULL, null=True, blank=True
+    )
+    reviewed_at = models.DateTimeField(null=True, blank=True)
+    
+    # Consent
+    terms_accepted = models.BooleanField(default=False)
+    data_consent_given = models.BooleanField(default=False)
+    submitted_at = models.DateTimeField(null=True, blank=True)
+    
+    def __str__(self):
+        return f"Application for {self.practitioner.user.get_full_name()}"
+    
+    def submit(self):
+        self.status = 'pending'
+        self.submitted_at = timezone.now()
+        self.save()
+    
+    def approve(self, admin_user):
+        self.status = 'approved'
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        self.save()
+        
+        # Verify the practitioner
+        self.practitioner.is_verified = True
+        self.practitioner.save()
+        
+        # Send notification
+        Notification.objects.create(
+            recipient=self.practitioner.user,
+            notification_type='PRACTITIONER_VERIFIED',
+            title='Application Approved!',
+            message='Your practitioner application has been approved. You can now accept bookings!',
+            data={'practitioner_id': self.practitioner.id}
+        )
+    
+    def reject(self, admin_user, reason):
+        self.status = 'rejected'
+        self.rejection_reason = reason
+        self.reviewed_by = admin_user
+        self.reviewed_at = timezone.now()
+        self.save()
+        
+        # Send notification
+        Notification.objects.create(
+            recipient=self.practitioner.user,
+            notification_type='SYSTEM',
+            title='Application Not Approved',
+            message=f'Your application was not approved. Reason: {reason}',
+            data={'reason': reason}
+        )
