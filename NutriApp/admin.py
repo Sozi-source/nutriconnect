@@ -5,9 +5,10 @@ from django.utils.html import format_html
 from django.urls import reverse
 from django.shortcuts import redirect
 from django.urls import path
+from django.utils import timezone
 from .models import (
     User, UserProfile, Practitioner, Specialty,
-    Availability, Consultation, Review
+    Availability, Consultation, Review, PractitionerApplication
 )
 
 # ==============================================================================
@@ -27,6 +28,38 @@ def reject_practitioners(modeladmin, request, queryset):
     count = queryset.update(is_verified=False)
     modeladmin.message_user(request, f"❌ Rejected {count} practitioner(s).", messages.WARNING)
 reject_practitioners.short_description = "❌ Reject selected practitioners"
+
+# ==============================================================================
+# USER ADMIN
+# ==============================================================================
+
+@admin.register(User)
+class UserAdmin(BaseUserAdmin):
+    list_display = ['email', 'first_name', 'last_name', 'is_active', 'is_staff']
+    list_filter = ['is_active', 'is_staff']
+    search_fields = ['email', 'first_name', 'last_name']
+    ordering = ['email']
+    
+    fieldsets = (
+        (None, {'fields': ('email', 'password')}),
+        ('Personal info', {'fields': ('first_name', 'last_name')}),
+        ('Permissions', {'fields': ('is_active', 'is_staff', 'is_superuser', 'groups', 'user_permissions')}),
+        ('Important dates', {'fields': ('last_login', 'date_joined')}),
+    )
+    add_fieldsets = (
+        (None, {
+            'classes': ('wide',),
+            'fields': ('email', 'first_name', 'last_name', 'password1', 'password2'),
+        }),
+    )
+
+
+@admin.register(UserProfile)
+class UserProfileAdmin(admin.ModelAdmin):
+    list_display = ['user', 'role', 'phone']
+    list_filter = ['role']
+    search_fields = ['user__email', 'user__first_name', 'user__last_name', 'phone']
+
 
 # ==============================================================================
 # PRACTITIONER ADMIN WITH APPROVAL WORKFLOW
@@ -208,9 +241,6 @@ class PractitionerAdmin(admin.ModelAdmin):
         practitioner.is_verified = True
         practitioner.save()
         
-        # Send notification to practitioner
-        # You can implement your notification logic here
-        
         self.message_user(request, f"✅ Approved {practitioner.user.get_full_name()}", messages.SUCCESS)
         return redirect('admin:NutriApp_practitioner_changelist')
     
@@ -222,116 +252,213 @@ class PractitionerAdmin(admin.ModelAdmin):
         self.message_user(request, f"❌ Rejected {practitioner.user.get_full_name()}", messages.WARNING)
         return redirect('admin:NutriApp_practitioner_changelist')
     
-    # Add a custom filter for pending practitioners
     class Media:
         css = {
             'all': ('admin/css/custom.css',)
         }
 
+
 # ==============================================================================
-# CUSTOM ADMIN VIEW FOR PENDING PRACTITIONERS
+# SPECIALTY ADMIN
 # ==============================================================================
 
-class PendingPractitionerFilter(admin.SimpleListFilter):
-    title = 'approval status'
-    parameter_name = 'approval_status'
+@admin.register(Specialty)
+class SpecialtyAdmin(admin.ModelAdmin):
+    list_display = ['name', 'description']
+    search_fields = ['name']
+
+
+# ==============================================================================
+# AVAILABILITY ADMIN
+# ==============================================================================
+
+@admin.register(Availability)
+class AvailabilityAdmin(admin.ModelAdmin):
+    list_display = ['practitioner', 'recurrence_type', 'start_time', 'end_time', 'is_available']
+    list_filter = ['recurrence_type', 'is_available']
+    search_fields = ['practitioner__user__email']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+# ==============================================================================
+# CONSULTATION ADMIN
+# ==============================================================================
+
+@admin.register(Consultation)
+class ConsultationAdmin(admin.ModelAdmin):
+    list_display = ['client', 'practitioner', 'date', 'time', 'status']
+    list_filter = ['status', 'date']
+    search_fields = ['client__email', 'practitioner__user__email']
+    readonly_fields = ['version', 'created_at', 'updated_at']
+
+
+# ==============================================================================
+# REVIEW ADMIN
+# ==============================================================================
+
+@admin.register(Review)
+class ReviewAdmin(admin.ModelAdmin):
+    list_display = ['consultation', 'reviewer', 'rating', 'created_at']
+    list_filter = ['rating']
+    search_fields = ['reviewer__email']
+    readonly_fields = ['created_at', 'updated_at']
+
+
+# ==============================================================================
+# PRACTITIONER APPLICATION ADMIN
+# ==============================================================================
+
+@admin.register(PractitionerApplication)
+class PractitionerApplicationAdmin(admin.ModelAdmin):
+    list_display = [
+        'id',
+        'practitioner_name',
+        'professional_title',
+        'status_badge',
+        'submitted_at_display',
+        'reviewed_at_display',
+    ]
     
-    def lookups(self, request, model_admin):
-        return (
-            ('pending', '⏳ Pending Approval'),
-            ('approved', '✅ Approved'),
-            ('rejected', '❌ Rejected'),
+    list_filter = [
+        'status',
+        ('submitted_at', admin.DateFieldListFilter),
+    ]
+    
+    search_fields = [
+        'practitioner__user__email',
+        'practitioner__user__first_name',
+        'practitioner__user__last_name',
+        'professional_title',
+        'qualifications'
+    ]
+    
+    readonly_fields = [
+        'practitioner',
+        'created_at',
+        'updated_at',
+        'submitted_at',
+        'reviewed_at',
+        'reviewed_by',
+        'application_details'
+    ]
+    
+    fieldsets = (
+        ('👤 APPLICANT', {
+            'fields': ('practitioner', 'application_details'),
+        }),
+        ('📋 PROFESSIONAL INFO', {
+            'fields': ('professional_title', 'qualifications', 'experience_description', 'specialized_areas'),
+        }),
+        ('🔗 ONLINE PRESENCE', {
+            'fields': ('linkedin_url', 'website_url'),
+        }),
+        ('📄 DOCUMENTS', {
+            'fields': ('id_document', 'certification_documents', 'profile_photo'),
+        }),
+        ('✅ REVIEW & STATUS', {
+            'fields': ('status', 'admin_notes', 'rejection_reason', 'reviewed_by', 'reviewed_at'),
+            'classes': ('wide',),
+            'description': 'Change status to approve or reject this application'
+        }),
+        ('📅 TIMESTAMPS', {
+            'fields': ('created_at', 'updated_at', 'submitted_at'),
+            'classes': ('collapse',),
+        }),
+    )
+    
+    actions = ['approve_applications', 'reject_applications', 'mark_as_pending']
+    
+    def practitioner_name(self, obj):
+        name = obj.practitioner.user.get_full_name() or obj.practitioner.user.email
+        return format_html('<strong>{}</strong>', name)
+    practitioner_name.short_description = 'Practitioner'
+    practitioner_name.admin_order_field = 'practitioner__user__email'
+    
+    def status_badge(self, obj):
+        colors = {
+            'draft': ('#6c757d', '📝 Draft'),
+            'pending': ('#f59e0b', '⏳ Pending'),
+            'approved': ('#10b981', '✅ Approved'),
+            'rejected': ('#ef4444', '❌ Rejected'),
+            'info_needed': ('#3b82f6', 'ℹ️ Info Needed'),
+        }
+        color, text = colors.get(obj.status, ('#6c757d', obj.status))
+        return format_html(
+            '<span style="background-color: {}; color: white; padding: 3px 8px; border-radius: 12px; font-size: 0.8em; font-weight: bold;">{}</span>',
+            color, text
         )
+    status_badge.short_description = 'Status'
     
-    def queryset(self, request, queryset):
-        if self.value() == 'pending':
-            return queryset.filter(is_verified=False)
-        if self.value() == 'approved':
-            return queryset.filter(is_verified=True)
-        if self.value() == 'rejected':
-            return queryset.filter(is_verified=False)  # You might want a rejected field
-        return queryset
-
-# Register the filter by adding it to list_filter
-# list_filter = [PendingPractitionerFilter, ...]
-
-# ==============================================================================
-# DASHBOARD CUSTOMIZATION FOR APPROVAL QUEUE
-# ==============================================================================
-
-# Add to your existing admin.py or create a new admin_dashboard.py
-from django.contrib.admin import AdminSite
-from django.template.response import TemplateResponse
-
-class NutriConnectAdminSite(AdminSite):
-    def get_app_list(self, request):
-        app_list = super().get_app_list(request)
-        
-        # Add pending count to dashboard
-        pending_count = Practitioner.objects.filter(is_verified=False).count()
-        
-        # You can customize the dashboard template
-        return app_list
+    def submitted_at_display(self, obj):
+        if obj.submitted_at:
+            return obj.submitted_at.strftime("%b %d, %Y %H:%M")
+        return '—'
+    submitted_at_display.short_description = 'Submitted'
     
-    def index(self, request, extra_context=None):
-        extra_context = extra_context or {}
-        extra_context['pending_practitioners'] = Practitioner.objects.filter(is_verified=False).count()
-        extra_context['recent_practitioners'] = Practitioner.objects.order_by('-created_at')[:5]
-        return super().index(request, extra_context=extra_context)
-
-# ==============================================================================
-# CUSTOM ADMIN TEMPLATE (templates/admin/practitioner_approval.html)
-# ==============================================================================
-
-"""
-Create this template to show pending approvals:
-
-{% extends "admin/base_site.html" %}
-{% load i18n static %}
-
-{% block content %}
-<div style="padding: 20px;">
-    <h1 style="margin-bottom: 20px;">⏳ Pending Practitioner Approvals</h1>
+    def reviewed_at_display(self, obj):
+        if obj.reviewed_at:
+            return obj.reviewed_at.strftime("%b %d, %Y %H:%M")
+        return '—'
+    reviewed_at_display.short_description = 'Reviewed'
     
-    <div style="background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
-        <table style="width: 100%; border-collapse: collapse;">
-            <thead>
-                <tr style="background: #f8f9fa;">
-                    <th style="padding: 12px; text-align: left;">Name</th>
-                    <th style="padding: 12px; text-align: left;">Email</th>
-                    <th style="padding: 12px; text-align: left;">City</th>
-                    <th style="padding: 12px; text-align: left;">Experience</th>
-                    <th style="padding: 12px; text-align: left;">Rate</th>
-                    <th style="padding: 12px; text-align: left;">Applied</th>
-                    <th style="padding: 12px; text-align: left;">Actions</th>
-                </tr>
-            </thead>
-            <tbody>
-                {% for practitioner in pending_practitioners %}
-                <tr style="border-bottom: 1px solid #dee2e6;">
-                    <td style="padding: 12px;">{{ practitioner.user.get_full_name }}</td>
-                    <td style="padding: 12px;">{{ practitioner.user.email }}</td>
-                    <td style="padding: 12px;">{{ practitioner.city|default:"—" }}</td>
-                    <td style="padding: 12px;">{{ practitioner.years_of_experience }} years</td>
-                    <td style="padding: 12px;">{{ practitioner.currency }} {{ practitioner.hourly_rate }}</td>
-                    <td style="padding: 12px;">{{ practitioner.created_at|date:"M d, Y" }}</td>
-                    <td style="padding: 12px;">
-                        <a href="{% url 'admin:approve-practitioner' practitioner.id %}" 
-                           style="background: #10b981; color: white; padding: 5px 10px; border-radius: 5px; text-decoration: none; margin-right: 5px;">✅ Approve</a>
-                        <a href="{% url 'admin:reject-practitioner' practitioner.id %}" 
-                           style="background: #ef4444; color: white; padding: 5px 10px; border-radius: 5px; text-decoration: none;">❌ Reject</a>
-                    </td>
-                </tr>
-                {% empty %}
-                <tr>
-                    <td colspan="7" style="padding: 40px; text-align: center; color: #6c757d;">
-                        No pending approvals 🎉
-                    </td>
-                </tr>
-                {% endfor %}
-            </tbody>
-        </table>
-    </div>
-</div>
-{% endblock %}
-"""
+    def application_details(self, obj):
+        return format_html(
+            '<div style="background: #f8f9fa; padding: 10px; border-radius: 5px;">'
+            '<p><strong>Email:</strong> {}</p>'
+            '<p><strong>Phone:</strong> {}</p>'
+            '<p><strong>City:</strong> {}</p>'
+            '<p><strong>Experience:</strong> {} years</p>'
+            '<p><strong>Hourly Rate:</strong> {} {}</p>'
+            '</div>',
+            obj.practitioner.user.email,
+            obj.practitioner.user.profile.phone or 'Not provided',
+            obj.practitioner.city or 'Not provided',
+            obj.practitioner.years_of_experience,
+            obj.practitioner.currency,
+            obj.practitioner.hourly_rate
+        )
+    application_details.short_description = 'Practitioner Details'
+    
+    def approve_applications(self, request, queryset):
+        for app in queryset:
+            app.status = 'approved'
+            app.reviewed_at = timezone.now()
+            app.reviewed_by = request.user
+            app.save()
+            # Also verify the practitioner
+            app.practitioner.is_verified = True
+            app.practitioner.save()
+        self.message_user(request, f"✅ Approved {queryset.count()} application(s)", messages.SUCCESS)
+    approve_applications.short_description = "✅ Approve selected applications"
+    
+    def reject_applications(self, request, queryset):
+        for app in queryset:
+            app.status = 'rejected'
+            app.reviewed_at = timezone.now()
+            app.reviewed_by = request.user
+            app.save()
+        self.message_user(request, f"❌ Rejected {queryset.count()} application(s)", messages.WARNING)
+    reject_applications.short_description = "❌ Reject selected applications"
+    
+    def mark_as_pending(self, request, queryset):
+        queryset.update(status='pending')
+        self.message_user(request, f"⏳ Marked {queryset.count()} application(s) as pending")
+    mark_as_pending.short_description = "⏳ Mark as pending"
+    
+    def save_model(self, request, obj, form, change):
+        if obj.status == 'approved' and not obj.reviewed_at:
+            obj.reviewed_at = timezone.now()
+            obj.reviewed_by = request.user
+            # Also verify the practitioner
+            obj.practitioner.is_verified = True
+            obj.practitioner.save()
+        super().save_model(request, obj, form, change)
+
+
+# ==============================================================================
+# CUSTOM ADMIN SITE CONFIGURATION
+# ==============================================================================
+
+admin.site.site_header = '🥗 NutriConnect Administration'
+admin.site.site_title = 'NutriConnect Admin'
+admin.site.index_title = 'Dashboard'
