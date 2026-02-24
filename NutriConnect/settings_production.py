@@ -74,7 +74,47 @@ CORS_ALLOW_METHODS = [
 # CSRF trusted origins (for session authentication)
 CSRF_TRUSTED_ORIGINS = [
     "http://localhost:3000",
+    "https://osozi.pythonanywhere.com",
 ]
+
+# ==============================================================================
+# CSRF EXEMPTION FOR API ENDPOINTS
+# ==============================================================================
+
+# Add this to exempt API endpoints from CSRF when using Token Authentication
+import re
+from django.utils.deprecation import MiddlewareMixin
+
+class DisableCSRFForAPIMiddleware(MiddlewareMixin):
+    """Disable CSRF for API endpoints that use token authentication"""
+    
+    def process_request(self, request):
+        # List of API paths that should be exempt from CSRF
+        api_paths = [
+            r'^/api/',
+            r'^/admin/applications/',
+            r'^/practitioners/',
+            r'^/consultations/',
+            r'^/login/',
+            r'^/register/',
+            r'^/logout/',
+        ]
+        
+        path = request.path_info
+        for pattern in api_paths:
+            if re.match(pattern, path):
+                setattr(request, '_dont_enforce_csrf_checks', True)
+                break
+        return None
+
+# Insert the middleware after CORS but before CSRF
+middleware_index = 0
+for i, m in enumerate(MIDDLEWARE):
+    if 'CsrfViewMiddleware' in m:
+        middleware_index = i
+        break
+
+MIDDLEWARE.insert(middleware_index, 'NutriConnect.settings_production.DisableCSRFForAPIMiddleware')
 
 # ==============================================================================
 # SECURITY HEADERS
