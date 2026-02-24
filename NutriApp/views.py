@@ -755,20 +755,56 @@ class AdminApplicationListView(generics.ListAPIView):
     def get_queryset(self):
         queryset = PractitionerApplication.objects.all()
         status = self.request.query_params.get('status')
-        if status:
+        if status and status != 'all':
             queryset = queryset.filter(status=status)
         return queryset.order_by('-created_at')
 
 
-class AdminApplicationDetailView(generics.RetrieveAPIView):
-    """Admin: View full application details"""
-    serializer_class = PractitionerApplicationSerializer
+class AdminApplicationDetailView(APIView):
+    """Admin: View and process application details"""
     permission_classes = [IsAdminUser]
-    queryset = PractitionerApplication.objects.all()
+    
+    def get(self, request, pk):
+        """Get application details"""
+        application = get_object_or_404(PractitionerApplication, pk=pk)
+        serializer = PractitionerApplicationSerializer(application)
+        return Response(serializer.data)
+    
+    def post(self, request, pk):
+        """Process application (approve/reject/request info)"""
+        application = get_object_or_404(PractitionerApplication, pk=pk)
+        action = request.data.get('action')
+        
+        if action == 'approve':
+            application.approve(request.user)
+            return Response({
+                'message': 'Application approved',
+                'status': 'approved'
+            })
+        elif action == 'reject':
+            reason = request.data.get('reason', 'No reason provided')
+            application.reject(request.user, reason)
+            return Response({
+                'message': 'Application rejected',
+                'status': 'rejected',
+                'reason': reason
+            })
+        elif action == 'request_info':
+            notes = request.data.get('notes', '')
+            application.request_info(request.user, notes)
+            return Response({
+                'message': 'More information requested',
+                'status': 'info_needed'
+            })
+        else:
+            return Response(
+                {'error': 'Invalid action. Must be approve, reject, or request_info'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
 
 
 class AdminApplicationActionView(APIView):
-    """Admin: Approve or reject application"""
+    """Admin: Approve or reject application (alternative endpoint)"""
     permission_classes = [IsAdminUser]
     
     def post(self, request, pk):
