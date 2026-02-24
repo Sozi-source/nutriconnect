@@ -1,8 +1,7 @@
 from rest_framework import serializers
 from .models import (
     User, UserProfile, Specialty, Practitioner, 
-    Availability, Consultation, Review, Notification,
-    PractitionerApplication
+    Availability, Consultation, Review, Notification
 )
 from django.db import transaction
 
@@ -99,80 +98,6 @@ class RegisterSerializer(serializers.ModelSerializer):
             return user
 
 # ==============================================================================
-# PRACTITIONER APPLICATION SERIALIZERS
-# ==============================================================================
-
-class PractitionerApplicationSerializer(serializers.ModelSerializer):
-    full_name = serializers.SerializerMethodField()
-    email = serializers.EmailField(source='user.email', read_only=True)
-    
-    class Meta:
-        model = PractitionerApplication
-        fields = [
-            'id', 'user', 'full_name', 'email', 'status',
-            'professional_title', 'qualifications', 'experience_description',
-            'specialized_areas', 'id_document', 'certification_documents',
-            'profile_photo', 'linkedin_url', 'website_url',
-            'submitted_at', 'reviewed_at', 'admin_notes', 'rejection_reason'
-        ]
-        read_only_fields = ['id', 'submitted_at', 'reviewed_at', 'status']
-    
-    def get_full_name(self, obj):
-        if obj.user:
-            return obj.user.get_full_name()
-        return "Unknown"
-
-class PractitionerApplicationCreateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PractitionerApplication
-        fields = [
-            'professional_title', 'qualifications', 'experience_description',
-            'specialized_areas', 'id_document', 'certification_documents',
-            'profile_photo', 'linkedin_url', 'website_url',
-            'terms_accepted', 'data_consent_given'
-        ]
-    
-    def validate(self, data):
-        if not data.get('terms_accepted'):
-            raise serializers.ValidationError(
-                "You must accept the terms and conditions"
-            )
-        return data
-
-class PractitionerApplicationUpdateSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PractitionerApplication
-        fields = [
-            'professional_title', 'qualifications', 'experience_description',
-            'specialized_areas', 'id_document', 'certification_documents',
-            'profile_photo', 'linkedin_url', 'website_url'
-        ]
-
-class PractitionerApplicationReviewSerializer(serializers.ModelSerializer):
-    applicant_info = serializers.SerializerMethodField()
-    
-    class Meta:
-        model = PractitionerApplication
-        fields = [
-            'id', 'status', 'admin_notes', 'rejection_reason',
-            'applicant_info', 'qualifications', 'experience_description',
-            'specialized_areas', 'id_document', 'certification_documents',
-            'profile_photo', 'linkedin_url', 'website_url',
-            'submitted_at'
-        ]
-        read_only_fields = ['id', 'submitted_at']
-    
-    def get_applicant_info(self, obj):
-        if obj.user:
-            return {
-                'email': obj.user.email,
-                'first_name': obj.user.first_name,
-                'last_name': obj.user.last_name,
-                'full_name': obj.user.get_full_name(),
-            }
-        return None
-
-# ==============================================================================
 # SPECIALTY SERIALIZERS
 # ==============================================================================
 
@@ -205,15 +130,8 @@ class PractitionerSerializer(serializers.ModelSerializer):
         return obj.user.get_full_name()
 
 class PractitionerDetailSerializer(PractitionerSerializer):
-    application_status = serializers.SerializerMethodField()
-    
     class Meta(PractitionerSerializer.Meta):
-        fields = PractitionerSerializer.Meta.fields + ['application_status']
-    
-    def get_application_status(self, obj):
-        if hasattr(obj, 'application'):
-            return obj.application.status
-        return None
+        fields = PractitionerSerializer.Meta.fields  # Removed application_status
 
 class PractitionerUpdateSerializer(serializers.ModelSerializer):
     class Meta:

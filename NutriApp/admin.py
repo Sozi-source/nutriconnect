@@ -3,7 +3,7 @@ from django.contrib import messages
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 from .models import (
     User, UserProfile, Practitioner, Specialty,
-    Availability, Consultation, Review, PractitionerApplication
+    Availability, Consultation, Review
 )
 
 # ==================== SIMPLE ADMIN ACTIONS ====================
@@ -17,20 +17,6 @@ def reject_practitioners(modeladmin, request, queryset):
     count = queryset.update(is_verified=False)
     modeladmin.message_user(request, f"❌ Rejected {count} practitioner(s).")
 reject_practitioners.short_description = "Reject selected practitioners"
-
-def approve_applications(modeladmin, request, queryset):
-    for app in queryset:
-        app.status = 'approved'
-        app.save()
-    modeladmin.message_user(request, f"✅ Approved {queryset.count()} application(s).")
-approve_applications.short_description = "Approve selected applications"
-
-def reject_applications(modeladmin, request, queryset):
-    for app in queryset:
-        app.status = 'rejected'
-        app.save()
-    modeladmin.message_user(request, f"❌ Rejected {queryset.count()} application(s).")
-reject_applications.short_description = "Reject selected applications"
 
 # ==================== MODEL REGISTRATIONS ====================
 
@@ -68,14 +54,6 @@ class PractitionerAdmin(admin.ModelAdmin):
     filter_horizontal = ['specialties']
     readonly_fields = ['created_at', 'updated_at']
     actions = [approve_practitioners, reject_practitioners]
-
-@admin.register(PractitionerApplication)
-class PractitionerApplicationAdmin(admin.ModelAdmin):
-    list_display = ['practitioner', 'status', 'submitted_at']
-    list_filter = ['status']
-    search_fields = ['practitioner__user__email']
-    readonly_fields = ['submitted_at']
-    actions = [approve_applications, reject_applications]
 
 @admin.register(Specialty)
 class SpecialtyAdmin(admin.ModelAdmin):
