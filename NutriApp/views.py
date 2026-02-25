@@ -169,7 +169,7 @@ class PractitionerListView(generics.ListAPIView):
     permission_classes = [IsAuthenticated, IsClientOrAdmin]
     
     def get_queryset(self):
-        queryset = Practitioner.objects.filter(is_verified=True)
+        queryset = Practitioner.objects()
         
         # Apply filters from query params
         specialty = self.request.query_params.get('specialty')
@@ -258,7 +258,7 @@ class SpecialtyListView(generics.ListAPIView):
 
 class AvailabilityListCreateView(generics.ListCreateAPIView):
     """List and create availability slots"""
-    permission_classes = [IsAuthenticated, IsPractitionerOrAdmin]
+    permission_classes = [IsAuthenticated]
     
     def get_serializer_class(self):
         if self.request.method == 'POST':
