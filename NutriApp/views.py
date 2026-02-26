@@ -166,7 +166,7 @@ class CurrentUserView(generics.RetrieveAPIView):
 class PractitionerListView(generics.ListAPIView):
     """List all verified practitioners"""
     serializer_class = PractitionerSerializer
-    permission_classes = [IsAuthenticated, IsClientOrAdmin]
+    permission_classes = [IsAuthenticated]
     
     def get_queryset(self):
         queryset = Practitioner.objects()
@@ -193,7 +193,7 @@ class PractitionerDetailView(generics.RetrieveAPIView):
     """View single practitioner details"""
     queryset = Practitioner.objects.filter(is_verified=True)
     serializer_class = PractitionerDetailSerializer
-    permission_classes = [IsAuthenticated, IsClientOrAdmin]
+    permission_classes = [IsAuthenticated]
 
 
 class MyPractitionerProfileView(generics.RetrieveUpdateAPIView):
